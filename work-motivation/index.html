@@ -1,0 +1,1362 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Work Motivation Map</title>
+<style>
+  :root {
+    --bg: #F5F5F7;
+    --panel: #FFFFFF;
+    --ink: #1D1D1F;
+    --ink-2: #6E6E73;
+    --ink-3: #AEAEB2;
+    --tile: #E8E8ED;
+    --tile-ink: #1D1D1F;
+    --hairline: rgba(0, 0, 0, 0.08);
+    --accent: #0071E3;
+    --work: #248A3D;
+    --team: #0066CC;
+    --leader: #8944AB;
+    --products: #D70015;
+    --company: #1D1D1F;
+    --radius-tile: 9px;
+    --radius-card: 20px;
+    --shadow-card: 0 1px 3px rgba(0,0,0,.06), 0 8px 24px rgba(0,0,0,.06);
+    --shadow-tile: 0 1px 2px rgba(0,0,0,.10);
+    --shadow-lift: 0 4px 10px rgba(0,0,0,.14), 0 12px 32px rgba(0,0,0,.14);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    -webkit-font-smoothing: antialiased;
+    padding: 32px clamp(16px, 4vw, 56px) 64px;
+  }
+
+  /* ---------- Header ---------- */
+  header {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 24px;
+    flex-wrap: wrap;
+    margin-bottom: 28px;
+  }
+  .title-block h1 {
+    font-size: 28px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+  }
+  .title-block p {
+    margin-top: 4px;
+    font-size: 14px;
+    color: var(--ink-2);
+  }
+  .controls {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  #name {
+    font: inherit;
+    font-size: 15px;
+    color: var(--ink);
+    background: transparent;
+    border: none;
+    border-bottom: 1.5px solid var(--hairline);
+    padding: 6px 2px;
+    min-width: 180px;
+    transition: border-color .2s;
+  }
+  #name:focus { outline: none; border-bottom-color: var(--accent); }
+  #name::placeholder { color: var(--ink-3); }
+  .counter {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--ink-2);
+    background: var(--tile);
+    border-radius: 980px;
+    padding: 7px 14px;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+  button {
+    font: inherit;
+    font-size: 14px;
+    font-weight: 500;
+    border: none;
+    border-radius: 980px;
+    padding: 9px 18px;
+    cursor: pointer;
+    transition: transform .15s ease, background .2s, opacity .2s;
+  }
+  button:active { transform: scale(0.97); }
+  .btn-primary { background: var(--accent); color: #fff; }
+  .btn-primary:hover { background: #0077ED; }
+  .btn-secondary { background: var(--tile); color: var(--ink); }
+  .btn-secondary:hover { background: #DEDEE3; }
+  .btn-ghost { background: transparent; color: var(--ink-2); padding: 9px 10px; }
+  .btn-ghost:hover { color: var(--ink); }
+  button:disabled { opacity: .4; cursor: default; }
+
+  /* ---------- Board ---------- */
+  #board {
+    position: relative;
+    background: var(--panel);
+    border-radius: var(--radius-card);
+    box-shadow: var(--shadow-card);
+    min-height: 240px;
+    user-select: none;
+  }
+  #panels {
+    display: flex;
+    height: 100%;
+    position: absolute;
+    inset: 0;
+  }
+  .panel {
+    flex: 1;
+    position: relative;
+    display: flex;
+    justify-content: center;
+    padding-top: 22px;
+  }
+  .panel + .panel { border-left: 1px solid var(--hairline); }
+  #board.vertical #panels { flex-direction: column; }
+  #board.vertical .panel { flex: 0 0 auto; }
+  #board.vertical .panel + .panel { border-left: none; border-top: 1px solid var(--hairline); }
+  .panel-label {
+    font-size: 19px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    pointer-events: none;
+  }
+  .zone-hint {
+    position: absolute;
+    border-radius: 14px;
+    opacity: 0;
+    transition: opacity .15s ease;
+    pointer-events: none;
+  }
+  .zone-hint.active-zone { opacity: 1; }
+
+  /* Snap preview: the gray shadow showing where the word will land */
+  #snap {
+    position: absolute;
+    border-radius: var(--radius-tile);
+    background: rgba(0, 0, 0, 0.09);
+    z-index: 1;
+    pointer-events: none;
+    opacity: 0;
+    transition: left .13s ease, top .13s ease, width .13s ease, opacity .13s ease;
+  }
+  #snap.show { opacity: 1; }
+
+  .tile {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--tile);
+    color: var(--tile-ink);
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 1;
+    padding: 8px 14px;
+    border-radius: var(--radius-tile);
+    box-shadow: var(--shadow-tile);
+    cursor: grab;
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+    white-space: nowrap;
+    transition: box-shadow .15s ease, transform .15s ease, opacity .15s ease;
+  }
+  .tile:hover { box-shadow: 0 2px 6px rgba(0,0,0,.14); transform: translateY(-1px); }
+  .tile.placed { position: absolute; margin: 0; z-index: 2; }
+  .tile.drag-source { opacity: .3; }
+  .tile.armed {
+    outline: 2px solid var(--accent);
+    outline-offset: 1.5px;
+    box-shadow: 0 2px 8px rgba(0,113,227,.25);
+  }
+  .tile .x {
+    display: none;
+    width: 15px; height: 15px;
+    align-items: center; justify-content: center;
+    border-radius: 50%;
+    background: rgba(0,0,0,.14);
+    color: #fff;
+    font-size: 10px;
+    line-height: 1;
+    cursor: pointer;
+  }
+  .tile:hover .x { display: inline-flex; }
+  #ghost {
+    position: fixed;
+    z-index: 999;
+    pointer-events: none;
+    transform: scale(1.06);
+    box-shadow: var(--shadow-lift);
+    cursor: grabbing;
+  }
+  body.dragging, body.dragging * {
+    user-select: none !important;
+    -webkit-user-select: none !important;
+  }
+  body.dragging { cursor: grabbing; }
+
+  /* ---------- Discard strip ---------- */
+  #discard {
+    margin-top: 14px;
+    height: 48px;
+    border-radius: 14px;
+    border: 1.5px dashed rgba(0,0,0,.15);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--ink-3);
+    transition: background .15s ease, border-color .15s ease, color .15s ease;
+  }
+  #discard svg {
+    width: 15px;
+    height: 15px;
+    color: rgba(215, 0, 21, .65);
+    transition: color .15s ease;
+    flex: none;
+  }
+  #discard.hot {
+    border-color: rgba(215, 0, 21, .5);
+    background: rgba(215, 0, 21, .06);
+    color: #D70015;
+  }
+  #discard.hot svg { color: #D70015; }
+
+  /* ---------- Tray ---------- */
+  #tray-section { margin-top: 36px; }
+  .tray-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+    margin-bottom: 14px;
+  }
+  .tray-head h2 { font-size: 15px; font-weight: 600; color: var(--ink-2); }
+  .add-word { display: flex; gap: 8px; }
+  #custom-input {
+    font: inherit;
+    font-size: 13px;
+    border: 1.5px solid var(--hairline);
+    border-radius: 980px;
+    padding: 6px 14px;
+    background: var(--panel);
+    width: 170px;
+    transition: border-color .2s;
+  }
+  #custom-input:focus { outline: none; border-color: var(--accent); }
+  #tray {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    min-height: 56px;
+  }
+  #tray:empty::after {
+    content: "All words placed.";
+    font-size: 13px;
+    color: var(--ink-3);
+  }
+
+  footer {
+    margin-top: 40px;
+    font-size: 12px;
+    color: var(--ink-3);
+    text-align: center;
+  }
+
+  /* ---------- Toast ---------- */
+  #toast {
+    position: fixed;
+    left: 50%;
+    bottom: 32px;
+    transform: translateX(-50%) translateY(16px);
+    background: rgba(29,29,31,.92);
+    color: #fff;
+    font-size: 13.5px;
+    font-weight: 500;
+    padding: 11px 20px;
+    border-radius: 980px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .25s ease, transform .25s ease;
+    z-index: 1000;
+    backdrop-filter: blur(8px);
+  }
+  #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  /* ---------- Dark mode ---------- */
+  /* JS sets data-theme="dark"|"light" on <html>: manual choice, or system
+     preference when the toggle is on Auto. Tokens remap; components below
+     need per-theme values that aren't token-driven. */
+  :root[data-theme="dark"] {
+    --bg: #1C1C1E;
+    --panel: #2C2C2E;
+    --ink: #F5F5F7;
+    --ink-2: #A1A1A6;
+    --ink-3: #7C7C82;
+    --tile: #3A3A3C;
+    --tile-ink: #F5F5F7;
+    --hairline: rgba(255, 255, 255, 0.12);
+    --accent: #0A84FF;
+    --work: #30D158;
+    --team: #0A84FF;
+    --leader: #BF5AF2;
+    --products: #FF453A;
+    --company: #F5F5F7;
+    --shadow-card: 0 1px 3px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.35);
+    --shadow-tile: 0 1px 2px rgba(0,0,0,.35);
+    --shadow-lift: 0 4px 10px rgba(0,0,0,.55), 0 12px 32px rgba(0,0,0,.55);
+  }
+  [data-theme="dark"] .tile:hover { box-shadow: 0 2px 6px rgba(0,0,0,.5); }
+  [data-theme="dark"] .tile .x { background: rgba(255,255,255,.28); color: #1D1D1F; }
+  [data-theme="dark"] .btn-primary:hover { background: #2B93FF; }
+  [data-theme="dark"] .btn-secondary:hover { background: #48484A; }
+  [data-theme="dark"] #snap { background: rgba(255, 255, 255, 0.13); }
+  [data-theme="dark"] #discard { border-color: rgba(255,255,255,.16); }
+  [data-theme="dark"] #discard svg { color: rgba(255, 69, 58, .7); }
+  [data-theme="dark"] #discard.hot {
+    border-color: rgba(255, 69, 58, .55);
+    background: rgba(255, 69, 58, .09);
+    color: #FF453A;
+  }
+  [data-theme="dark"] #discard.hot svg { color: #FF453A; }
+  [data-theme="dark"] #toast {
+    background: rgba(44, 44, 46, .96);
+    border: 1px solid rgba(255, 255, 255, .12);
+  }
+
+  #theme { display: inline-flex; align-items: center; }
+  #theme svg { width: 17px; height: 17px; }
+
+  @media (max-width: 760px) {
+    body { padding: 20px 14px 48px; }
+    .panel-label { font-size: 16px; }
+    .tile { font-size: 13px; padding: 7px 11px; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="title-block">
+    <h1>Work Motivation Map</h1>
+    <p>Pick up to 7 words. Place each on the area it belongs to &mdash; or between two areas.</p>
+  </div>
+  <div class="controls">
+    <input id="name" type="text" placeholder="Your name or identifier" autocomplete="off">
+    <span class="counter" id="counter">0 of 7</span>
+    <button class="btn-primary" id="export-png">Export PNG</button>
+    <button class="btn-secondary" id="export-md">Export Markdown</button>
+    <button class="btn-ghost" id="reset" title="Clear the board">Reset</button>
+    <button class="btn-ghost" id="theme" title="Theme"></button>
+  </div>
+</header>
+
+<div id="board">
+  <div id="panels"></div>
+  <div id="zones"></div>
+  <div id="snap"></div>
+  <div id="placed-layer"></div>
+</div>
+
+<div id="discard" title="Drop a word here to remove it from the deck">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M3 6h18"/>
+    <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/>
+    <line x1="10" y1="11" x2="10" y2="17"/>
+    <line x1="14" y1="11" x2="14" y2="17"/>
+  </svg>
+  <span>Drop a word here to remove it from the deck &mdash; narrow down by elimination</span>
+</div>
+
+<section id="tray-section">
+  <div class="tray-head">
+    <h2>Word deck</h2>
+    <div class="add-word">
+      <button class="btn-ghost" id="restore" hidden></button>
+      <input id="custom-input" type="text" placeholder="Add your own word" maxlength="24" autocomplete="off">
+      <button class="btn-secondary" id="custom-add">Add</button>
+    </div>
+  </div>
+  <div id="tray"></div>
+</section>
+
+<footer>Drag a word over the board — the gray shadow shows where it will land: on an area, or on the line between two. Click a word, then click a spot, works too. Click the &times; on a placed word to return it. Drop a word on the dashed strip to eliminate it. Saves automatically in this browser.</footer>
+
+<div id="toast"></div>
+
+<script>
+'use strict';
+
+/* ============================== Data ============================== */
+
+const AREAS = [
+  { id: 'work',     label: 'Work',     color: 'var(--work)',     hex: '#248A3D' },
+  { id: 'team',     label: 'Team',     color: 'var(--team)',     hex: '#0066CC' },
+  { id: 'leader',   label: 'Leader',   color: 'var(--leader)',   hex: '#8944AB' },
+  { id: 'products', label: 'Products', color: 'var(--products)', hex: '#D70015' },
+  { id: 'company',  label: 'Company',  color: 'var(--company)',  hex: '#1D1D1F' },
+];
+
+// Zone ids: area ids, plus 'a|b' boundaries between adjacent areas.
+const BOUNDARIES = AREAS.slice(0, -1).map((a, i) => a.id + '|' + AREAS[i + 1].id);
+
+const WORDS = [
+  'Access','Achievement','Advancement','Appreciation','Autonomy','Balance','Beauty',
+  'Benefits','Challenge','Collaboration','Community','Compensation','Competition',
+  'Confidence','Connection','Control','Craftsmanship','Creativity','Curiosity',
+  'Design','Difference','Discovery','Empowerment','Excellence','Fairness','Fear',
+  'Flexibility','Focus','Fun','Helping','Impact','Inclusion','Influence','Innovation',
+  'Inspiration','Integrity','Involvement','Joy','Learning','Loyalty','Passion',
+  'Perfection','Power','Pride','Promotion','Recognition','Reputation','Respect',
+  'Responsibility','Results','Risk','Scope','Secrets','Security','Status','Title',
+  'Trust','Variety','Vision','Winning',
+];
+
+const MAX_PLACED = 7;
+const STORAGE_KEY = 'work-motivation-v1';
+
+/* ============================== State ============================== */
+
+let state = {
+  name: '',
+  placed: [],      // [{ word, zone }] in insertion order
+  custom: [],      // custom word strings
+  discarded: [],   // words eliminated via the discard strip
+};
+
+let armedWord = null;   // word string armed via click-to-place
+
+function save() {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) {}
+}
+function load() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return;
+    const s = JSON.parse(raw);
+    if (s && Array.isArray(s.placed) && Array.isArray(s.custom)) {
+      state = {
+        name: s.name || '',
+        placed: s.placed,
+        custom: s.custom,
+        discarded: Array.isArray(s.discarded) ? s.discarded : [],
+      };
+    }
+  } catch (e) {}
+}
+
+function allWords() { return WORDS.concat(state.custom); }
+function isPlaced(word) { return state.placed.some(p => p.word === word); }
+function placedByZone(excludeWord) {
+  const byZone = {};
+  for (const p of state.placed) {
+    if (excludeWord && p.word === excludeWord) continue;
+    (byZone[p.zone] = byZone[p.zone] || []).push(p.word);
+  }
+  return byZone;
+}
+
+/* ============================== DOM refs ============================== */
+
+const board = document.getElementById('board');
+const panelsEl = document.getElementById('panels');
+const zonesEl = document.getElementById('zones');
+const placedLayer = document.getElementById('placed-layer');
+const snapEl = document.getElementById('snap');
+const trayEl = document.getElementById('tray');
+const counterEl = document.getElementById('counter');
+const nameEl = document.getElementById('name');
+const toastEl = document.getElementById('toast');
+
+/* ============================== Board build ============================== */
+
+for (const area of AREAS) {
+  const p = document.createElement('div');
+  p.className = 'panel';
+  p.dataset.area = area.id;
+  const label = document.createElement('span');
+  label.className = 'panel-label';
+  label.textContent = area.label;
+  label.style.color = area.color;
+  p.appendChild(label);
+  panelsEl.appendChild(p);
+}
+
+// Zone hint overlays (5 areas + 4 boundaries); only the active one is visible.
+const zoneHints = {};
+for (const area of AREAS) zoneHints[area.id] = makeZoneHint(area.id);
+for (const b of BOUNDARIES) zoneHints[b] = makeZoneHint(b);
+
+function makeZoneHint(zoneId) {
+  const el = document.createElement('div');
+  el.className = 'zone-hint';
+  el.dataset.zone = zoneId;
+  zonesEl.appendChild(el);
+  return el;
+}
+
+// Hint tints resolve from the live CSS variables so they follow the theme.
+function refreshHintColors() {
+  const cs = getComputedStyle(document.documentElement);
+  const dark = document.documentElement.dataset.theme === 'dark';
+  const fillA = dark ? 0.11 : 0.06;
+  const ringA = dark ? 0.42 : 0.28;
+  const styleHint = (el, hex) => {
+    el.style.background = hexAlpha(hex, fillA);
+    el.style.boxShadow = 'inset 0 0 0 1.5px ' + hexAlpha(hex, ringA);
+  };
+  for (const area of AREAS) styleHint(zoneHints[area.id], cs.getPropertyValue('--' + area.id).trim());
+  const accent = cs.getPropertyValue('--accent').trim();
+  for (const b of BOUNDARIES) styleHint(zoneHints[b], accent);
+}
+
+function hexAlpha(hex, a) {
+  const n = parseInt(hex.slice(1), 16);
+  return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${a})`;
+}
+
+/* ============================== Geometry & layout ============================== */
+
+const BOUNDARY_HALF = 44;   // px either side of a divider counts as the boundary zone
+const LABEL_ROW = 60;       // horizontal mode: space reserved for area labels
+const TILE_GAP = 10;
+const V_LABEL_ROW = 48;     // vertical mode: label band inside each panel
+
+let vertical = false;
+let TILE_H = 33;            // measured from a real tile at render time
+let lastLayout = null;      // geometry of the last render, used by hit-testing & preview
+
+function updateMode() {
+  const v = board.clientWidth < 700;
+  if (v !== vertical) {
+    vertical = v;
+    board.classList.toggle('vertical', v);
+  }
+}
+
+function panelRects() {
+  const bRect = board.getBoundingClientRect();
+  return [...panelsEl.children].map(p => {
+    const r = p.getBoundingClientRect();
+    return { left: r.left - bRect.left, width: r.width };
+  });
+}
+
+function zoneCenterX(zoneId, rects) {
+  if (zoneId.includes('|')) {
+    const i = AREAS.findIndex(a => a.id === zoneId.split('|')[0]);
+    return rects[i].left + rects[i].width;   // the divider
+  }
+  const i = AREAS.findIndex(a => a.id === zoneId);
+  return rects[i].left + rects[i].width / 2;
+}
+
+// Greedy line-breaking for vertical mode: items = [{word, w}]
+function breakLines(items, maxW) {
+  const lines = [];
+  let line = [], lw = 0;
+  for (const it of items) {
+    const add = line.length ? TILE_GAP + it.w : it.w;
+    if (line.length && lw + add > maxW) { lines.push(line); line = [it]; lw = it.w; }
+    else { line.push(it); lw += add; }
+  }
+  if (line.length) lines.push(line);
+  return lines;
+}
+
+// First row where a tile spanning [x1, x2] fits without touching occupied tiles.
+// occ: [{row, x1, x2}]; 8 px minimum horizontal gap between neighbors.
+function firstFreeRow(occ, x1, x2) {
+  let row = 0;
+  while (occ.some(o => o.row === row && x1 < o.x2 + 8 && x2 > o.x1 - 8)) row++;
+  return row;
+}
+
+// Computes positions for every placed tile plus overall board geometry.
+// entries = state.placed (insertion order): earlier words keep their rows,
+// later words drop to the next free row on collision. Because this runs from
+// scratch on every render, removing a word re-compacts everything upward.
+function computeLayout(entries, widths) {
+  const pos = {};
+
+  if (!vertical) {
+    const rects = panelRects();
+    const rowH = TILE_H + TILE_GAP;
+    const occ = [];
+    let maxRow = 0;
+    for (const e of entries) {
+      const w = widths[e.word];
+      const cx = zoneCenterX(e.zone, rects);
+      const x1 = cx - w / 2, x2 = cx + w / 2;
+      const row = firstFreeRow(occ, x1, x2);
+      occ.push({ row, x1, x2 });
+      maxRow = Math.max(maxRow, row);
+      pos[e.word] = { x: Math.round(x1), y: LABEL_ROW + row * rowH, w };
+    }
+    const boardH = Math.max(240, LABEL_ROW + (entries.length ? (maxRow + 1) * rowH : 0) + 24);
+    return { pos, boardH, vertical: false };
+  }
+
+  // Vertical: areas stack top-to-bottom; boundary tiles straddle horizontal dividers.
+  const byZone = {};
+  for (const e of entries) (byZone[e.zone] = byZone[e.zone] || []).push(e.word);
+  const boardW = board.clientWidth;
+  const maxLineW = boardW - 32;
+  const toItems = z => (byZone[z] || []).map(w => ({ word: w, w: widths[w] }));
+  const areaLines = AREAS.map(a => breakLines(toItems(a.id), maxLineW));
+  const bLines = BOUNDARIES.map(b => breakLines(toItems(b), maxLineW));
+  const bBandH = bLines.map(ls => ls.length ? ls.length * (TILE_H + TILE_GAP) + 12 : 0);
+  const areaBandH = areaLines.map(ls =>
+    Math.max(88, V_LABEL_ROW + (ls.length ? ls.length * (TILE_H + TILE_GAP) + 8 : 0)));
+
+  const panelTops = [], panelHs = [];
+  let y = 0;
+  for (let i = 0; i < AREAS.length; i++) {
+    const h = areaBandH[i]
+      + (i > 0 ? bBandH[i - 1] / 2 : 0)
+      + (i < BOUNDARIES.length ? bBandH[i] / 2 : 0);
+    panelTops.push(y);
+    panelHs.push(h);
+    y += h;
+  }
+  const boardH = y;
+  const dividerYs = panelTops.slice(1);
+
+  const placeLine = (line, ty) => {
+    const lw = line.reduce((s, it) => s + it.w, 0) + TILE_GAP * (line.length - 1);
+    let x = Math.round((boardW - lw) / 2);
+    for (const it of line) {
+      pos[it.word] = { x, y: Math.round(ty), w: it.w };
+      x += it.w + TILE_GAP;
+    }
+  };
+
+  AREAS.forEach((a, i) => {
+    let ty = panelTops[i] + (i > 0 ? bBandH[i - 1] / 2 : 0) + V_LABEL_ROW;
+    for (const line of areaLines[i]) { placeLine(line, ty); ty += TILE_H + TILE_GAP; }
+  });
+  BOUNDARIES.forEach((b, i) => {
+    const ls = bLines[i];
+    if (!ls.length) return;
+    const totalH = ls.length * (TILE_H + TILE_GAP) - TILE_GAP;
+    let ty = dividerYs[i] - totalH / 2;
+    for (const line of ls) { placeLine(line, ty); ty += TILE_H + TILE_GAP; }
+  });
+
+  return { pos, boardH, vertical: true, panelTops, panelHs, bBandH, dividerYs };
+}
+
+function zoneFromPoint(clientX, clientY) {
+  const bRect = board.getBoundingClientRect();
+  if (clientX < bRect.left - 8 || clientX > bRect.right + 8 ||
+      clientY < bRect.top - 8 || clientY > bRect.bottom + 8) return null;
+
+  if (!vertical) {
+    const x = clientX - bRect.left;
+    const rects = panelRects();
+    for (let i = 0; i < rects.length - 1; i++) {
+      const dividerX = rects[i].left + rects[i].width;
+      if (Math.abs(x - dividerX) <= BOUNDARY_HALF) return BOUNDARIES[i];
+    }
+    for (let i = 0; i < rects.length; i++) {
+      if (x >= rects[i].left && x <= rects[i].left + rects[i].width) return AREAS[i].id;
+    }
+    return null;
+  }
+
+  const L = lastLayout;
+  if (!L || !L.vertical) return null;
+  const y = clientY - bRect.top;
+  for (let i = 0; i < L.dividerYs.length; i++) {
+    const half = Math.max(36, L.bBandH[i] / 2 + 6);
+    if (Math.abs(y - L.dividerYs[i]) <= half) return BOUNDARIES[i];
+  }
+  for (let i = 0; i < AREAS.length; i++) {
+    if (y >= L.panelTops[i] && y <= L.panelTops[i] + L.panelHs[i]) return AREAS[i].id;
+  }
+  return null;
+}
+
+/* ============================== Rendering ============================== */
+
+function render() {
+  renderTray();
+  renderBoard();
+  counterEl.textContent = state.placed.length + ' of ' + MAX_PLACED;
+  const restoreBtn = document.getElementById('restore');
+  restoreBtn.hidden = !state.discarded.length;
+  restoreBtn.textContent = 'Restore ' + state.discarded.length + ' removed';
+  save();
+}
+
+function renderTray() {
+  trayEl.innerHTML = '';
+  const words = allWords().slice().sort((a, b) => a.localeCompare(b));
+  for (const word of words) {
+    if (isPlaced(word) || state.discarded.includes(word)) continue;
+    const t = makeTile(word);
+    if (state.custom.includes(word)) {
+      const x = document.createElement('span');
+      x.className = 'x';
+      x.textContent = '×';
+      x.title = 'Remove custom word';
+      x.addEventListener('pointerdown', e => e.stopPropagation());
+      x.addEventListener('click', e => {
+        e.stopPropagation();
+        state.custom = state.custom.filter(w => w !== word);
+        if (armedWord === word) disarm();
+        render();
+      });
+      t.appendChild(x);
+    }
+    trayEl.appendChild(t);
+  }
+}
+
+function renderBoard() {
+  updateMode();
+  placedLayer.innerHTML = '';
+
+  const tiles = {};
+  for (const p of state.placed) {
+    const t = makeTile(p.word);
+    t.classList.add('placed');
+    const x = document.createElement('span');
+    x.className = 'x';
+    x.textContent = '×';
+    x.title = 'Return to deck';
+    x.addEventListener('pointerdown', e => e.stopPropagation());
+    x.addEventListener('click', e => { e.stopPropagation(); unplaceWord(p.word); });
+    t.appendChild(x);
+    placedLayer.appendChild(t);
+    tiles[p.word] = t;
+  }
+
+  const first = placedLayer.firstChild || trayEl.firstChild;
+  if (first) TILE_H = first.offsetHeight;
+
+  const widths = {};
+  for (const w in tiles) widths[w] = tiles[w].offsetWidth;
+
+  const layout = computeLayout(state.placed, widths);
+  applyLayout(layout, tiles);
+}
+
+function applyLayout(layout, tiles) {
+  board.style.minHeight = layout.boardH + 'px';
+  const panels = [...panelsEl.children];
+  if (layout.vertical) {
+    panels.forEach((p, i) => {
+      p.style.height = layout.panelHs[i] + 'px';
+      p.style.paddingTop = ((i > 0 ? layout.bBandH[i - 1] / 2 : 0) + 14) + 'px';
+    });
+  } else {
+    panels.forEach(p => { p.style.height = ''; p.style.paddingTop = ''; });
+  }
+  for (const w in tiles) {
+    const p = layout.pos[w];
+    tiles[w].style.left = p.x + 'px';
+    tiles[w].style.top = p.y + 'px';
+  }
+  lastLayout = layout;
+  positionZoneHints(layout);
+}
+
+function positionZoneHints(layout) {
+  if (!layout.vertical) {
+    const rects = panelRects();
+    const h = layout.boardH;
+    AREAS.forEach((a, i) => {
+      const el = zoneHints[a.id];
+      el.style.left = (rects[i].left + 8) + 'px';
+      el.style.top = '8px';
+      el.style.width = (rects[i].width - 16) + 'px';
+      el.style.height = (h - 16) + 'px';
+    });
+    BOUNDARIES.forEach((b, i) => {
+      const dividerX = rects[i].left + rects[i].width;
+      const el = zoneHints[b];
+      el.style.left = (dividerX - BOUNDARY_HALF) + 'px';
+      el.style.top = '8px';
+      el.style.width = (BOUNDARY_HALF * 2) + 'px';
+      el.style.height = (h - 16) + 'px';
+    });
+    return;
+  }
+  const w = board.clientWidth;
+  AREAS.forEach((a, i) => {
+    const el = zoneHints[a.id];
+    el.style.left = '8px';
+    el.style.width = (w - 16) + 'px';
+    el.style.top = (layout.panelTops[i] + 6) + 'px';
+    el.style.height = (layout.panelHs[i] - 12) + 'px';
+  });
+  BOUNDARIES.forEach((b, i) => {
+    const half = Math.max(36, layout.bBandH[i] / 2 + 6);
+    const el = zoneHints[b];
+    el.style.left = '8px';
+    el.style.width = (w - 16) + 'px';
+    el.style.top = (layout.dividerYs[i] - half) + 'px';
+    el.style.height = (half * 2) + 'px';
+  });
+}
+
+function makeTile(word) {
+  const t = document.createElement('div');
+  t.className = 'tile';
+  t.dataset.word = word;
+  const label = document.createElement('span');
+  label.textContent = word;
+  t.appendChild(label);
+  if (armedWord === word) t.classList.add('armed');
+  t.addEventListener('pointerdown', onTilePointerDown);
+  return t;
+}
+
+/* ============================== Snap preview ============================== */
+
+function setActiveZone(zone) {
+  for (const z in zoneHints) zoneHints[z].classList.toggle('active-zone', z === zone);
+}
+
+// Where would a tile of width w land if dropped in this zone right now?
+// Positions are derived from the *rendered* layout so the shadow matches what you see.
+function previewSlot(zone, word, w) {
+  const L = lastLayout;
+  if (!L) return null;
+  const entry = state.placed.find(p => p.word === word);
+  if (entry && entry.zone === zone) {
+    const p = L.pos[word];
+    return { x: p.x, y: p.y, w };
+  }
+  if (!L.vertical) {
+    // Same collision rule as computeLayout, seeded from the rendered positions.
+    const rects = panelRects();
+    const cx = zoneCenterX(zone, rects);
+    const rowH = TILE_H + TILE_GAP;
+    const x1 = cx - w / 2, x2 = cx + w / 2;
+    const occ = [];
+    for (const wd in L.pos) {
+      if (wd === word) continue;
+      const p = L.pos[wd];
+      occ.push({ row: Math.round((p.y - LABEL_ROW) / rowH), x1: p.x, x2: p.x + p.w });
+    }
+    const row = firstFreeRow(occ, x1, x2);
+    return { x: Math.round(x1), y: LABEL_ROW + row * rowH, w };
+  }
+
+  const others = (placedByZone(word)[zone] || []);
+  const x = Math.round((board.clientWidth - w) / 2);
+  if (!zone.includes('|')) {
+    const i = AREAS.findIndex(a => a.id === zone);
+    let y = L.panelTops[i] + (i > 0 ? L.bBandH[i - 1] / 2 : 0) + V_LABEL_ROW;
+    for (const o of others) y = Math.max(y, L.pos[o].y + TILE_H + TILE_GAP);
+    return { x, y: Math.round(y), w };
+  }
+  const bi = BOUNDARIES.indexOf(zone);
+  if (!others.length) return { x, y: Math.round(L.dividerYs[bi] - TILE_H / 2), w };
+  let y = -Infinity;
+  for (const o of others) y = Math.max(y, L.pos[o].y);
+  return { x, y: Math.round(y + TILE_H + TILE_GAP), w };
+}
+
+function updateSnap(word, tileW, clientX, clientY) {
+  const zone = zoneFromPoint(clientX, clientY);
+  const isNew = !isPlaced(word);
+  if (!zone || (isNew && state.placed.length >= MAX_PLACED)) {
+    clearSnap();
+    return zone;
+  }
+  const slot = previewSlot(zone, word, tileW);
+  if (!slot) { clearSnap(); return zone; }
+  snapEl.style.left = slot.x + 'px';
+  snapEl.style.top = slot.y + 'px';
+  snapEl.style.width = slot.w + 'px';
+  snapEl.style.height = TILE_H + 'px';
+  snapEl.classList.add('show');
+  setActiveZone(zone);
+  return zone;
+}
+
+function clearSnap() {
+  snapEl.classList.remove('show');
+  setActiveZone(null);
+}
+
+/* ============================== Placement ops ============================== */
+
+function placeWord(word, zone) {
+  const existing = state.placed.find(p => p.word === word);
+  if (existing) {
+    existing.zone = zone;
+  } else {
+    if (state.placed.length >= MAX_PLACED) {
+      toast('You’ve placed ' + MAX_PLACED + ' words — remove one first.');
+      disarm(); render();
+      return;
+    }
+    state.placed.push({ word, zone });
+  }
+  disarm();
+  render();
+}
+
+function unplaceWord(word) {
+  state.placed = state.placed.filter(p => p.word !== word);
+  disarm();
+  render();
+}
+
+/* ---------- Discard strip: eliminate words from the deck ---------- */
+
+const discardEl = document.getElementById('discard');
+
+function discardWord(word) {
+  state.placed = state.placed.filter(p => p.word !== word);
+  if (!state.discarded.includes(word)) state.discarded.push(word);
+  disarm();
+  render();
+  toast('“' + word + '” removed from the deck.');
+}
+
+function overDiscard(clientX, clientY) {
+  const r = discardEl.getBoundingClientRect();
+  return clientX >= r.left && clientX <= r.right && clientY >= r.top && clientY <= r.bottom;
+}
+
+discardEl.addEventListener('click', () => { if (armedWord) discardWord(armedWord); });
+discardEl.addEventListener('pointerenter', () => { if (armedWord && !drag) discardEl.classList.add('hot'); });
+discardEl.addEventListener('pointerleave', () => { if (!drag) discardEl.classList.remove('hot'); });
+
+document.getElementById('restore').addEventListener('click', () => {
+  state.discarded = [];
+  render();
+  toast('Removed words restored to the deck.');
+});
+
+function disarm() {
+  armedWord = null;
+  clearSnap();
+}
+
+let armHintShown = false;
+function arm(word) {
+  armedWord = word;
+  render();
+  if (!armHintShown) {
+    armHintShown = true;
+    toast('Now click a spot on the board — an area, or the line between two.');
+  }
+}
+
+/* ============================== Drag & click ============================== */
+
+let drag = null; // { word, tile, tileW, ghost, startX, startY, offsetX, offsetY, moved }
+
+function onTilePointerDown(e) {
+  if (e.button !== undefined && e.button !== 0) return;
+  e.preventDefault();   // stop native text selection from starting on drag
+  const tile = e.currentTarget;
+  const word = tile.dataset.word;
+  const r = tile.getBoundingClientRect();
+  drag = {
+    word, tile, tileW: tile.offsetWidth,
+    startX: e.clientX, startY: e.clientY,
+    offsetX: e.clientX - r.left, offsetY: e.clientY - r.top,
+    moved: false, ghost: null,
+  };
+  window.addEventListener('pointermove', onPointerMove);
+  window.addEventListener('pointerup', onPointerUp);
+  window.addEventListener('pointercancel', onPointerUp);
+}
+
+function onPointerMove(e) {
+  if (!drag) return;
+  if (!drag.moved) {
+    if (Math.hypot(e.clientX - drag.startX, e.clientY - drag.startY) < 5) return;
+    drag.moved = true;
+    disarm();
+    document.body.classList.add('dragging');
+    const sel = window.getSelection && window.getSelection();
+    if (sel) sel.removeAllRanges();
+    const g = drag.tile.cloneNode(true);
+    g.id = 'ghost';
+    g.classList.remove('placed', 'armed');
+    document.body.appendChild(g);
+    drag.ghost = g;
+    drag.tile.classList.add('drag-source');
+  }
+  drag.ghost.style.left = (e.clientX - drag.offsetX) + 'px';
+  drag.ghost.style.top = (e.clientY - drag.offsetY) + 'px';
+  if (overDiscard(e.clientX, e.clientY)) {
+    discardEl.classList.add('hot');
+    clearSnap();
+  } else {
+    discardEl.classList.remove('hot');
+    updateSnap(drag.word, drag.tileW, e.clientX, e.clientY);
+  }
+}
+
+function onPointerUp(e) {
+  window.removeEventListener('pointermove', onPointerMove);
+  window.removeEventListener('pointerup', onPointerUp);
+  window.removeEventListener('pointercancel', onPointerUp);
+  if (!drag) return;
+  const { word, moved, ghost, tile } = drag;
+  drag = null;
+  clearSnap();
+
+  if (!moved) {
+    // Plain click: arm / disarm for click-to-place
+    if (armedWord === word) { disarm(); render(); }
+    else arm(word);
+    return;
+  }
+
+  if (ghost) ghost.remove();
+  tile.classList.remove('drag-source');
+  document.body.classList.remove('dragging');
+  discardEl.classList.remove('hot');
+
+  if (overDiscard(e.clientX, e.clientY)) {
+    discardWord(word);
+    return;
+  }
+
+  const zone = zoneFromPoint(e.clientX, e.clientY);
+  if (zone) {
+    placeWord(word, zone);
+  } else if (isPlaced(word)) {
+    unplaceWord(word);   // dragged off the board -> back to deck
+  } else {
+    render();
+  }
+}
+
+// Armed word: the shadow follows the pointer over the board; click places it.
+board.addEventListener('pointermove', e => {
+  if (!armedWord || drag) return;
+  const el = document.querySelector('[data-word="' + CSS.escape(armedWord) + '"]');
+  updateSnap(armedWord, el ? el.offsetWidth : 100, e.clientX, e.clientY);
+});
+board.addEventListener('pointerleave', () => {
+  if (armedWord && !drag) clearSnap();
+});
+board.addEventListener('click', e => {
+  if (!armedWord || e.target.closest('.tile')) return;
+  const zone = zoneFromPoint(e.clientX, e.clientY);
+  if (zone) placeWord(armedWord, zone);
+});
+
+// Clicking outside the board and tiles disarms
+document.body.addEventListener('click', e => {
+  if (armedWord && !e.target.closest('.tile') && !e.target.closest('#board')) {
+    disarm(); render();
+  }
+});
+window.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && armedWord) { disarm(); render(); }
+});
+
+/* ============================== Custom words ============================== */
+
+document.getElementById('custom-add').addEventListener('click', addCustomWord);
+document.getElementById('custom-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') addCustomWord();
+});
+
+function addCustomWord() {
+  const input = document.getElementById('custom-input');
+  const word = input.value.trim().replace(/\s+/g, ' ');
+  if (!word) return;
+  const discardedMatch = state.discarded.find(w => w.toLowerCase() === word.toLowerCase());
+  if (discardedMatch) {
+    state.discarded = state.discarded.filter(w => w !== discardedMatch);
+    input.value = '';
+    render();
+    toast('“' + discardedMatch + '” restored to the deck.');
+    return;
+  }
+  const exists = allWords().some(w => w.toLowerCase() === word.toLowerCase());
+  if (exists) { toast('“' + word + '” is already in the deck.'); return; }
+  state.custom.push(word);
+  input.value = '';
+  render();
+}
+
+/* ============================== Name, reset ============================== */
+
+nameEl.addEventListener('input', () => { state.name = nameEl.value; save(); });
+
+document.getElementById('reset').addEventListener('click', () => {
+  if (!state.placed.length && !state.custom.length && !state.name && !state.discarded.length) return;
+  if (!confirm('Clear the board, name, custom words, and removed words?')) return;
+  state = { name: '', placed: [], custom: [], discarded: [] };
+  nameEl.value = '';
+  disarm();
+  render();
+});
+
+/* ============================== Theme ============================== */
+
+const THEME_KEY = 'work-motivation-theme';
+const THEME_MODES = ['auto', 'light', 'dark'];
+const THEME_ICONS = {
+  auto: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 0 18z" fill="currentColor" stroke="none"/></svg>',
+  light: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4.5"/><path d="M12 2.5v2.5M12 19v2.5M2.5 12H5M19 12h2.5M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M19.1 4.9l-1.8 1.8M6.7 17.3l-1.8 1.8"/></svg>',
+  dark: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>',
+};
+let themeMode = THEME_MODES.includes(localStorage.getItem(THEME_KEY)) ? localStorage.getItem(THEME_KEY) : 'auto';
+const darkMQ = window.matchMedia('(prefers-color-scheme: dark)');
+const themeBtn = document.getElementById('theme');
+
+function applyTheme() {
+  const dark = themeMode === 'dark' || (themeMode === 'auto' && darkMQ.matches);
+  document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+  document.documentElement.style.colorScheme = dark ? 'dark' : 'light';
+  themeBtn.innerHTML = THEME_ICONS[themeMode];
+  themeBtn.title = 'Theme: ' + (themeMode === 'auto' ? 'Auto (follows system)' : themeMode[0].toUpperCase() + themeMode.slice(1));
+  refreshHintColors();
+}
+
+themeBtn.addEventListener('click', () => {
+  themeMode = THEME_MODES[(THEME_MODES.indexOf(themeMode) + 1) % THEME_MODES.length];
+  try { localStorage.setItem(THEME_KEY, themeMode); } catch (e) {}
+  applyTheme();
+  toast('Theme: ' + (themeMode === 'auto' ? 'Auto — follows your system' : themeMode[0].toUpperCase() + themeMode.slice(1)));
+});
+darkMQ.addEventListener('change', () => { if (themeMode === 'auto') applyTheme(); });
+
+/* ============================== Toast ============================== */
+
+let toastTimer = null;
+function toast(msg) {
+  toastEl.textContent = msg;
+  toastEl.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => toastEl.classList.remove('show'), 2600);
+}
+
+/* ============================== Export helpers ============================== */
+
+function todayISO() {
+  const d = new Date();
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+function slug(s) {
+  return (s || 'unnamed').toLowerCase().replace(/[^a-z0-9一-鿿]+/g, '-').replace(/^-+|-+$/g, '') || 'unnamed';
+}
+function zoneLabel(zoneId) {
+  if (zoneId.includes('|')) {
+    const [a, b] = zoneId.split('|').map(id => AREAS.find(x => x.id === id).label);
+    return a + ' · ' + b;
+  }
+  return AREAS.find(x => x.id === zoneId).label;
+}
+function download(url, filename) {
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
+function requirePlacement() {
+  if (!state.placed.length) { toast('Place at least one word first.'); return false; }
+  return true;
+}
+
+/* ============================== Markdown export ============================== */
+
+document.getElementById('export-md').addEventListener('click', () => {
+  if (!requirePlacement()) return;
+  const name = state.name.trim() || 'Unnamed';
+  const lines = [];
+  lines.push('# Work Motivation Map');
+  lines.push('');
+  lines.push('**Name:** ' + name + '  ');
+  lines.push('**Date:** ' + todayISO() + '  ');
+  lines.push('**Words placed:** ' + state.placed.length + ' of ' + MAX_PLACED);
+  lines.push('');
+  lines.push('| # | Word | Placement |');
+  lines.push('|---|------|-----------|');
+  state.placed.forEach((p, i) => {
+    const between = p.zone.includes('|') ? ' *(between)*' : '';
+    lines.push('| ' + (i + 1) + ' | ' + p.word + ' | ' + zoneLabel(p.zone) + between + ' |');
+  });
+  lines.push('');
+  lines.push('## By area');
+  lines.push('');
+  const zoneOrder = [];
+  AREAS.forEach((a, i) => {
+    zoneOrder.push(a.id);
+    if (i < BOUNDARIES.length) zoneOrder.push(BOUNDARIES[i]);
+  });
+  for (const z of zoneOrder) {
+    const words = state.placed.filter(p => p.zone === z).map(p => p.word);
+    if (!words.length) continue;
+    const between = z.includes('|') ? ' *(between)*' : '';
+    lines.push('- **' + zoneLabel(z) + between + ':** ' + words.join(', '));
+  }
+  lines.push('');
+  const blob = new Blob([lines.join('\n')], { type: 'text/markdown' });
+  const url = URL.createObjectURL(blob);
+  download(url, 'work-motivation-' + slug(name) + '-' + todayISO() + '.md');
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
+  toast('Markdown exported.');
+});
+
+/* ============================== PNG export ============================== */
+
+document.getElementById('export-png').addEventListener('click', () => {
+  if (!requirePlacement()) return;
+  const name = state.name.trim() || 'Unnamed';
+
+  // Layout constants (CSS px; canvas is drawn at 2x for retina crispness)
+  const SCALE = 2;
+  const PAD = 40;
+  const PANEL_W = 300;
+  const BOARD_W = PANEL_W * AREAS.length;
+  const LABEL_Y = 46;
+  const TILE_HX = 44;
+  const TILE_GAP_PX = 12;
+  const TILE_FONT = '500 19px -apple-system, "SF Pro Text", "Helvetica Neue", Helvetica, Arial, sans-serif';
+  const LABEL_FONT = '600 24px -apple-system, "SF Pro Text", "Helvetica Neue", Helvetica, Arial, sans-serif';
+  const META_FONT = '600 20px -apple-system, "SF Pro Text", "Helvetica Neue", Helvetica, Arial, sans-serif';
+
+  // Same collision-row layout as the live board, in export coordinates.
+  const zoneCX = zone => {
+    if (zone.includes('|')) {
+      const i = AREAS.findIndex(a => a.id === zone.split('|')[0]);
+      return (i + 1) * PANEL_W;
+    }
+    const i = AREAS.findIndex(a => a.id === zone);
+    return i * PANEL_W + PANEL_W / 2;
+  };
+  const measure = document.createElement('canvas').getContext('2d');
+  measure.font = TILE_FONT;
+  const occ = [];
+  const tileRows = [];   // [{word, cx, w, row}] in insertion order
+  let maxRow = 0;
+  for (const p of state.placed) {
+    const w = measure.measureText(p.word).width + 40;
+    const cx = zoneCX(p.zone);
+    const x1 = cx - w / 2, x2 = cx + w / 2;
+    const row = firstFreeRow(occ, x1, x2);
+    occ.push({ row, x1, x2 });
+    maxRow = Math.max(maxRow, row);
+    tileRows.push({ word: p.word, cx, w, row });
+  }
+  const BOARD_H = Math.max(230, LABEL_Y + 30 + (maxRow + 1) * (TILE_HX + TILE_GAP_PX) + 20);
+
+  const metaText = name + '  ·  ' + todayISO();
+  const PILL_H = 52;
+  const headerGap = 24;
+
+  const W = BOARD_W + PAD * 2;
+  const H = PAD + PILL_H + headerGap + BOARD_H + PAD;
+
+  const canvas = document.createElement('canvas');
+  canvas.width = W * SCALE;
+  canvas.height = H * SCALE;
+  const ctx = canvas.getContext('2d');
+  ctx.scale(SCALE, SCALE);
+  // No background fill -> transparent PNG.
+
+  function rr(x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+  }
+
+  // Name pill
+  ctx.font = META_FONT;
+  const metaW = ctx.measureText(metaText).width;
+  const pillW = metaW + 48;
+  ctx.fillStyle = '#FFFFFF';
+  rr(PAD, PAD, pillW, PILL_H, PILL_H / 2);
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(0,0,0,0.08)';
+  ctx.lineWidth = 1;
+  rr(PAD + 0.5, PAD + 0.5, pillW - 1, PILL_H - 1, (PILL_H - 1) / 2);
+  ctx.stroke();
+  ctx.fillStyle = '#1D1D1F';
+  ctx.textBaseline = 'middle';
+  ctx.textAlign = 'left';
+  ctx.fillText(metaText, PAD + 24, PAD + PILL_H / 2 + 1);
+
+  // Board card
+  const bx = PAD, by = PAD + PILL_H + headerGap;
+  ctx.fillStyle = '#FFFFFF';
+  rr(bx, by, BOARD_W, BOARD_H, 24);
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(0,0,0,0.08)';
+  rr(bx + 0.5, by + 0.5, BOARD_W - 1, BOARD_H - 1, 23.5);
+  ctx.stroke();
+
+  // Dividers
+  ctx.strokeStyle = '#E5E5EA';
+  for (let i = 1; i < AREAS.length; i++) {
+    const x = bx + i * PANEL_W;
+    ctx.beginPath();
+    ctx.moveTo(x + 0.5, by + 18);
+    ctx.lineTo(x + 0.5, by + BOARD_H - 18);
+    ctx.stroke();
+  }
+
+  // Area labels
+  ctx.font = LABEL_FONT;
+  ctx.textAlign = 'center';
+  AREAS.forEach((a, i) => {
+    ctx.fillStyle = a.hex;
+    ctx.fillText(a.label, bx + i * PANEL_W + PANEL_W / 2, by + LABEL_Y);
+  });
+
+  // Tiles
+  ctx.font = TILE_FONT;
+  for (const t of tileRows) {
+    const x = bx + t.cx - t.w / 2;
+    const y = by + LABEL_Y + 30 + t.row * (TILE_HX + TILE_GAP_PX);
+    ctx.fillStyle = '#E8E8ED';
+    rr(x, y, t.w, TILE_HX, 11);
+    ctx.fill();
+    ctx.fillStyle = '#1D1D1F';
+    ctx.fillText(t.word, bx + t.cx, y + TILE_HX / 2 + 1);
+  }
+
+  download(canvas.toDataURL('image/png'), 'work-motivation-' + slug(name) + '-' + todayISO() + '.png');
+  toast('PNG exported (transparent background).');
+});
+
+/* ============================== Init ============================== */
+
+load();
+nameEl.value = state.name;
+applyTheme();
+render();
+window.addEventListener('resize', renderBoard);
+</script>
+</body>
+</html>
