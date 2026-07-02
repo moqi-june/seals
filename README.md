@@ -2,7 +2,7 @@
 
 ## Work Motivation Map
 
-**Live:** https://moqi-june.github.io/tools/work-motivation/
+**Live:** https://moqi-june.github.io/seals/work-motivation/
 
 A small card-sort game for figuring out what actually motivates you at work,
 digitized from a physical card exercise. Pick up to 7 words from a deck of 60
