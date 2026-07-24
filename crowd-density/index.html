@@ -1,0 +1,2095 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Crowd Density Visualizer</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>&#128101;</text></svg>">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<style>
+  /* ============================================================
+     Design tokens — same two-layer system as work-motivation:
+     Hub system tokens + app tokens. Dark mode is JS-driven:
+     applyTheme() resolves Auto/Light/Dark to data-theme on <html>.
+     ============================================================ */
+  :root {
+    --color-text-primary: #1D1D1F;
+    --color-text-secondary: #6E6E73;
+    --color-text-tertiary: #86868B;
+    --color-text-error: #E30000;
+    --color-bg-primary: #FFFFFF;
+    --color-bg-secondary: #FBFBFD;
+    --color-bg-tertiary: #F5F5F7;
+    --color-border-secondary: #D2D2D7;
+    --shadow-sm: 0 1px 2px rgba(0,0,0,.10);
+    --shadow-md: 0 1px 3px rgba(0,0,0,.06), 0 8px 24px rgba(0,0,0,.06);
+    --shadow-lg: 0 4px 10px rgba(0,0,0,.14), 0 12px 32px rgba(0,0,0,.14);
+
+    --bg: var(--color-bg-tertiary);
+    --panel: var(--color-bg-primary);
+    --ink: var(--color-text-primary);
+    --ink-2: var(--color-text-secondary);
+    --ink-3: #AEAEB2;
+    --tile: #E8E8ED;
+    --hairline: rgba(0, 0, 0, 0.08);
+    --accent: #0071E3;
+    --ok: #248A3D;
+    --info: #0066CC;
+    --warn: #BF4800;
+    --danger: #D70015;
+    --stage-bg: #14171C;
+    --radius-card: 14px;
+    --shadow-card: var(--shadow-md);
+  }
+  :root[data-theme="dark"] {
+    --color-text-primary: #F5F5F7;
+    --color-text-secondary: #A1A1A6;
+    --color-text-tertiary: #7C7C82;
+    --color-bg-primary: #2C2C2E;
+    --color-bg-secondary: #1D1D1F;
+    --color-bg-tertiary: #1C1C1E;
+    --color-border-secondary: #424245;
+
+    --bg: #1C1C1E;
+    --panel: #2C2C2E;
+    --ink: #F5F5F7;
+    --ink-2: #A1A1A6;
+    --ink-3: #7C7C82;
+    --tile: #3A3A3C;
+    --hairline: rgba(255, 255, 255, 0.12);
+    --accent: #0A84FF;
+    --ok: #30D158;
+    --info: #0A84FF;
+    --warn: #FF9F0A;
+    --danger: #FF453A;
+    --shadow-card: 0 1px 3px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.35);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    -webkit-font-smoothing: antialiased;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* ---------- Header ---------- */
+  .header-nav {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px clamp(16px, 3vw, 32px);
+    border-bottom: 1px solid var(--hairline);
+    flex: none;
+    background: var(--bg);
+    z-index: 1001;
+  }
+  .header-nav__brand {
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", sans-serif;
+    font-size: 17px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    color: var(--ink);
+  }
+  .header-nav__tag { font-size: 12.5px; color: var(--ink-3); }
+  .header-nav .spacer { flex: 1; }
+
+  /* ---------- Buttons / fields (Hub) ---------- */
+  .btn {
+    font: inherit;
+    font-size: 13.5px;
+    font-weight: 500;
+    border: none;
+    border-radius: 980px;
+    padding: 8px 16px;
+    min-height: 36px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    cursor: pointer;
+    transition: transform .15s ease, background .2s, opacity .2s, color .2s;
+    white-space: nowrap;
+  }
+  .btn:active { transform: scale(0.97); }
+  .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .btn:disabled { opacity: .4; cursor: default; }
+  .btn--primary { background: var(--accent); color: #fff; }
+  .btn--primary:hover:not(:disabled) { background: #0077ED; }
+  [data-theme="dark"] .btn--primary:hover:not(:disabled) { background: #2B93FF; }
+  .btn--secondary { background: var(--tile); color: var(--ink); }
+  .btn--secondary:hover:not(:disabled) { background: #DEDEE3; }
+  [data-theme="dark"] .btn--secondary:hover:not(:disabled) { background: #48484A; }
+  .btn--ghost { background: transparent; color: var(--ink-2); padding: 8px 10px; }
+  .btn--ghost:hover:not(:disabled) { color: var(--ink); }
+  #theme svg { width: 17px; height: 17px; }
+
+  .field { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+  .field__label { font-size: 12px; color: var(--ink-2); }
+  .field__input {
+    font: inherit;
+    font-size: 14px;
+    color: var(--ink);
+    background: transparent;
+    border: none;
+    border-bottom: 1.5px solid var(--hairline);
+    padding: 6px 2px;
+    transition: border-color .2s;
+    width: 100%;
+  }
+  .field__input:focus { outline: none; border-bottom-color: var(--accent); }
+  .field__input::placeholder { color: var(--ink-3); }
+
+  /* ---------- App layout ---------- */
+  #app { flex: 1 1 auto; min-height: 0; display: flex; }
+  #sidebar {
+    width: 350px;
+    flex: none;
+    overflow-y: auto;
+    padding: 14px 14px 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    border-right: 1px solid var(--hairline);
+  }
+  #stage {
+    flex: 1;
+    position: relative;
+    min-width: 0;
+    background: var(--stage-bg);
+    overflow: hidden;
+  }
+  #map, #plan-viewport { position: absolute; inset: 0; }
+  #map { background: var(--stage-bg); }
+  #plan-viewport { background: var(--bg); }
+  #plan { position: absolute; inset: 0; }
+  #overlay { position: absolute; inset: 0; z-index: 500; pointer-events: none; }
+  #overlay.capture { pointer-events: auto; cursor: crosshair; }
+
+  .stage-msg[hidden] { display: none; }
+  .stage-msg {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 600;
+    pointer-events: none;
+  }
+  .stage-msg > div {
+    pointer-events: auto;
+    background: var(--panel);
+    border-radius: var(--radius-card);
+    box-shadow: var(--shadow-card);
+    padding: 22px 26px;
+    max-width: 380px;
+    text-align: center;
+    font-size: 14px;
+    color: var(--ink-2);
+    line-height: 1.5;
+  }
+  .stage-msg b { color: var(--ink); }
+
+  #hint {
+    position: absolute;
+    top: 14px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(29,29,31,.90);
+    color: #fff;
+    font-size: 13px;
+    font-weight: 500;
+    padding: 9px 18px;
+    border-radius: 980px;
+    z-index: 900;
+    pointer-events: none;
+    backdrop-filter: blur(8px);
+    max-width: min(70ch, calc(100% - 24px));
+    text-align: center;
+  }
+
+  #calib-dialog {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: var(--panel);
+    border-radius: var(--radius-card);
+    box-shadow: var(--shadow-lg);
+    padding: 18px 20px;
+    z-index: 950;
+    width: 300px;
+  }
+  #calib-dialog h3 { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
+  #calib-dialog p { font-size: 12.5px; color: var(--ink-2); margin-bottom: 12px; }
+  .calib-row { display: flex; gap: 10px; align-items: flex-end; margin-bottom: 14px; }
+  .calib-row .field { flex: 1; }
+  #calib-unit {
+    font: inherit; font-size: 14px; color: var(--ink);
+    background: var(--panel); border: 1.5px solid var(--hairline);
+    border-radius: 8px; padding: 6px 8px;
+  }
+  .calib-actions { display: flex; gap: 8px; justify-content: flex-end; }
+
+  /* ---------- Sidebar panels ---------- */
+  .panel {
+    background: var(--panel);
+    border-radius: var(--radius-card);
+    box-shadow: var(--shadow-sm);
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    transition: opacity .25s;
+  }
+  .panel.is-disabled { opacity: .45; pointer-events: none; }
+  .panel-title {
+    font-size: 11.5px;
+    font-weight: 600;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .panel-note { font-size: 12px; color: var(--ink-3); line-height: 1.45; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .row--tight { gap: 6px; }
+
+  .seg {
+    display: flex;
+    background: var(--tile);
+    border-radius: 980px;
+    padding: 3px;
+    gap: 2px;
+  }
+  .seg__btn {
+    flex: 1;
+    font: inherit;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--ink-2);
+    background: transparent;
+    border: none;
+    border-radius: 980px;
+    padding: 7px 10px;
+    cursor: pointer;
+    transition: background .2s, color .2s;
+    white-space: nowrap;
+  }
+  .seg__btn.is-active { background: var(--panel); color: var(--ink); box-shadow: var(--shadow-sm); }
+  .seg--mini .seg__btn { font-size: 12px; padding: 5px 8px; }
+
+  #dropzone {
+    border: 1.5px dashed var(--color-border-secondary);
+    border-radius: 10px;
+    padding: 18px 12px;
+    text-align: center;
+    font-size: 13px;
+    color: var(--ink-2);
+    cursor: pointer;
+    transition: border-color .2s, background .2s;
+    line-height: 1.5;
+  }
+  #dropzone:hover, #dropzone.drag { border-color: var(--accent); background: rgba(10,132,255,.05); }
+  #dropzone b { color: var(--accent); font-weight: 500; }
+
+  #addr-results { display: flex; flex-direction: column; gap: 4px; }
+  #addr-results button {
+    font: inherit; font-size: 12.5px; text-align: left;
+    color: var(--ink); background: var(--tile);
+    border: none; border-radius: 8px; padding: 7px 10px; cursor: pointer;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  #addr-results button:hover { background: var(--accent); color: #fff; }
+  #addr-results .none { font-size: 12.5px; color: var(--ink-3); padding: 2px; }
+
+  .readout { font-size: 13px; color: var(--ink-2); font-variant-numeric: tabular-nums; line-height: 1.5; }
+  .readout b { color: var(--ink); font-weight: 600; }
+
+  /* ---------- Crowd controls ---------- */
+  input[type="range"] {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 4px;
+    border-radius: 2px;
+    background: var(--tile);
+    outline: none;
+    cursor: pointer;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 22px; height: 22px;
+    border-radius: 50%;
+    background: #fff;
+    border: 1px solid rgba(0,0,0,.12);
+    box-shadow: var(--shadow-md);
+    cursor: grab;
+  }
+  input[type="range"]::-moz-range-thumb {
+    width: 22px; height: 22px; border-radius: 50%;
+    background: #fff; border: 1px solid rgba(0,0,0,.12);
+    box-shadow: var(--shadow-md); cursor: grab;
+  }
+  #count-num {
+    font: inherit; font-size: 15px; font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    color: var(--ink); background: transparent;
+    border: none; border-bottom: 1.5px solid var(--hairline);
+    padding: 4px 2px; width: 90px;
+  }
+  #count-num:focus { outline: none; border-bottom-color: var(--accent); }
+  .preset-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .preset {
+    font: inherit; font-size: 12px; font-weight: 500;
+    color: var(--ink); background: var(--tile);
+    border: none; border-radius: 9px;
+    padding: 7px 6px; cursor: pointer;
+    display: flex; flex-direction: column; gap: 1px; align-items: center;
+    transition: background .2s;
+  }
+  .preset:hover { background: #DEDEE3; }
+  [data-theme="dark"] .preset:hover { background: #48484A; }
+  .preset small { font-size: 10.5px; color: var(--ink-3); font-weight: 400; }
+  .preset.is-active { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+  .swatches { display: flex; gap: 7px; align-items: center; }
+  .swatches .lbl { font-size: 12px; color: var(--ink-2); margin-right: 2px; }
+  .swatch {
+    width: 21px; height: 21px; border-radius: 50%;
+    border: 1.5px solid var(--hairline); cursor: pointer; padding: 0;
+    transition: transform .15s;
+  }
+  .swatch:hover { transform: scale(1.12); }
+  .swatch.is-active { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .swatch--auto {
+    background: conic-gradient(#fff 0 25%, #0A84FF 25% 50%, #FFD60A 50% 75%, #FF9F0A 75% 100%);
+  }
+
+  /* ---------- Stats card ---------- */
+  .stat-big { font-size: 27px; font-weight: 700; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+  .stat-big span { font-size: 15px; font-weight: 500; color: var(--ink-2); letter-spacing: 0; }
+  .stat-rows { display: flex; flex-direction: column; gap: 5px; }
+  .stat-row { display: flex; justify-content: space-between; gap: 10px; font-size: 13px; }
+  .stat-row span { color: var(--ink-2); }
+  .stat-row b { font-weight: 600; font-variant-numeric: tabular-nums; text-align: right; }
+  .chip {
+    align-self: flex-start;
+    font-size: 12.5px; font-weight: 600;
+    padding: 6px 13px; border-radius: 980px;
+    color: #fff; background: var(--ink-3);
+    display: inline-flex; align-items: center; gap: 6px;
+  }
+  .chip::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: rgba(255,255,255,.85); }
+
+  /* ---------- Scenarios ---------- */
+  #scenario-list { display: flex; flex-wrap: wrap; gap: 6px; }
+  .scenario-chip {
+    display: inline-flex; align-items: center; gap: 7px;
+    font-size: 12.5px; font-weight: 500;
+    background: var(--tile); color: var(--ink);
+    border-radius: 980px; padding: 6px 7px 6px 13px;
+    font-variant-numeric: tabular-nums;
+  }
+  .scenario-chip button {
+    font: inherit; border: none; cursor: pointer;
+    width: 17px; height: 17px; border-radius: 50%;
+    background: rgba(0,0,0,.14); color: var(--ink);
+    font-size: 11px; line-height: 1;
+    display: inline-flex; align-items: center; justify-content: center;
+  }
+  [data-theme="dark"] .scenario-chip button { background: rgba(255,255,255,.22); }
+  .scenario-chip button:hover { background: var(--danger); color: #fff; }
+
+  .sidebar-foot { font-size: 11.5px; color: var(--ink-3); line-height: 1.5; padding: 0 4px; }
+
+  /* ---------- Toast ---------- */
+  #toast {
+    position: fixed;
+    left: 50%;
+    bottom: 28px;
+    transform: translateX(-50%) translateY(16px);
+    background: rgba(29,29,31,.92);
+    color: #fff;
+    font-size: 13.5px;
+    font-weight: 500;
+    padding: 11px 20px;
+    border-radius: 980px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .25s ease, transform .25s ease;
+    z-index: 2000;
+    backdrop-filter: blur(8px);
+    max-width: min(75ch, calc(100vw - 32px));
+    text-align: center;
+  }
+  #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  [data-theme="dark"] #toast { background: rgba(44,44,46,.96); border: 1px solid rgba(255,255,255,.12); }
+
+  /* Leaflet chrome in dark mode */
+  [data-theme="dark"] .leaflet-control-zoom a { background: #2C2C2E; color: #F5F5F7; border-color: rgba(255,255,255,.15); }
+  [data-theme="dark"] .leaflet-control-attribution { background: rgba(28,28,30,.8); color: #A1A1A6; }
+  [data-theme="dark"] .leaflet-control-attribution a { color: #2997FF; }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, #toast, .btn { transition: none !important; }
+  }
+  @media (max-width: 880px) {
+    body { overflow: auto; }
+    #app { flex-direction: column; }
+    #stage { flex: none; height: 58vh; }
+    #sidebar { width: 100%; border-right: none; border-top: 1px solid var(--hairline); order: 2; }
+  }
+</style>
+</head>
+<body>
+
+<nav class="header-nav">
+  <span class="header-nav__brand">Crowd Density Visualizer</span>
+  <span class="header-nav__tag">model how many people fit — and how it feels</span>
+  <span class="spacer"></span>
+  <button class="btn btn--ghost" id="theme" type="button" title="Theme" aria-label="Theme"></button>
+</nav>
+
+<div id="app">
+<aside id="sidebar">
+
+  <div class="panel" id="sec-base">
+    <div class="panel-title">1 · Base layer</div>
+    <div class="seg" role="tablist">
+      <button class="seg__btn is-active" id="tab-geo" type="button" role="tab">Satellite map</button>
+      <button class="seg__btn" id="tab-image" type="button" role="tab">Site plan / PDF</button>
+    </div>
+    <div id="geo-controls">
+      <div class="row" style="align-items:flex-end;">
+        <div class="field" style="flex:1;">
+          <label class="field__label" for="addr">Find a place</label>
+          <input class="field__input" id="addr" type="text" placeholder="Address or landmark" autocomplete="off">
+        </div>
+        <button class="btn btn--secondary" id="addr-go" type="button">Search</button>
+      </div>
+      <div id="addr-results"></div>
+    </div>
+    <div id="image-controls" hidden>
+      <div id="dropzone">Drop a site plan here<br>(PNG, JPG or PDF) — or <b>browse</b></div>
+      <input type="file" id="file" hidden accept="image/png,image/jpeg,image/webp,application/pdf,.pdf">
+      <div class="row" style="margin-top:10px;">
+        <button class="btn btn--secondary" id="calibrate" type="button" disabled>Calibrate scale</button>
+        <span class="readout" id="calib-status">No plan loaded</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel" id="sec-venue">
+    <div class="panel-title">2 · Venue area</div>
+    <div class="row">
+      <button class="btn btn--primary" id="draw" type="button">Draw area</button>
+      <button class="btn btn--ghost" id="clear-poly" type="button" disabled>Clear</button>
+    </div>
+    <div class="readout" id="area-readout">Outline the lawn or venue footprint on the right.</div>
+  </div>
+
+  <div class="panel is-disabled" id="sec-crowd">
+    <div class="panel-title">3 · Crowd size <span id="gen-progress" style="font-weight:400;text-transform:none;letter-spacing:0;"></span></div>
+    <div class="row" style="justify-content:space-between;">
+      <input id="count-num" type="number" min="0" step="50" value="5000" aria-label="Number of people">
+      <span class="readout">people</span>
+      <span style="flex:1"></span>
+      <button class="btn btn--ghost" id="reshuffle" type="button" title="Re-scatter the dots with a new random layout">&#8635; reshuffle</button>
+    </div>
+    <input type="range" id="count-slider" min="0" max="25000" step="10" value="5000" aria-label="Number of people slider">
+    <div class="preset-btns">
+      <button class="preset" data-sqft="15" type="button">Loose<small>15 sq ft / person</small></button>
+      <button class="preset" data-sqft="10" type="button">Comfortable<small>10 sq ft / person</small></button>
+      <button class="preset" data-sqft="7"  type="button">Moderate<small>7 sq ft / person</small></button>
+      <button class="preset" data-sqft="5"  type="button">Dense<small>5 sq ft / person</small></button>
+    </div>
+    <div class="swatches">
+      <span class="lbl">Dots</span>
+      <button class="swatch swatch--auto is-active" data-color="auto" type="button" title="Auto (white on satellite, blue on plans)"></button>
+      <button class="swatch" data-color="#FFFFFF" style="background:#FFFFFF" type="button" title="White"></button>
+      <button class="swatch" data-color="#FFD60A" style="background:#FFD60A" type="button" title="Yellow"></button>
+      <button class="swatch" data-color="#FF9F0A" style="background:#FF9F0A" type="button" title="Orange"></button>
+      <button class="swatch" data-color="#0A84FF" style="background:#0A84FF" type="button" title="Blue"></button>
+    </div>
+  </div>
+
+  <div class="panel is-disabled" id="sec-stats">
+    <div class="panel-title">4 · Live stats</div>
+    <div class="stat-big"><span id="stat-count-num">0</span> <span>people</span></div>
+    <div class="stat-rows">
+      <div class="stat-row"><span>Venue area</span><b id="stat-area">—</b></div>
+      <div class="stat-row"><span>Space per person</span><b id="stat-sqftpp">—</b></div>
+      <div class="stat-row"><span>Crowd density</span><b id="stat-ppm2">—</b></div>
+      <div class="stat-row"><span>Typical spacing</span><b id="stat-spacing">—</b></div>
+    </div>
+    <div class="chip" id="rating-chip">—</div>
+  </div>
+
+  <div class="panel is-disabled" id="sec-scenarios">
+    <div class="panel-title">5 · Compare scenarios</div>
+    <div class="panel-note">Pin the current headcount, change the slider, pin again — then export one side-by-side board.</div>
+    <div id="scenario-list"></div>
+    <div class="row">
+      <button class="btn btn--secondary" id="pin" type="button">Pin current</button>
+      <button class="btn btn--primary" id="export-board" type="button" disabled>Export comparison</button>
+    </div>
+  </div>
+
+  <div class="panel is-disabled" id="sec-export">
+    <div class="panel-title">6 · Export snapshot</div>
+    <div class="field">
+      <label class="field__label" for="title-input">Slide title (optional)</label>
+      <input class="field__input" id="title-input" type="text" placeholder="e.g. Summer Concert — South Lawn" maxlength="80" autocomplete="off">
+    </div>
+    <div class="row" style="justify-content:space-between;">
+      <div class="seg seg--mini" style="width:110px;">
+        <button class="seg__btn is-active" data-res="2" type="button">2&times;</button>
+        <button class="seg__btn" data-res="3" type="button">3&times;</button>
+      </div>
+      <button class="btn btn--primary" id="export-png" type="button">Export PNG</button>
+    </div>
+  </div>
+
+  <div class="sidebar-foot">
+    Saves automatically in this browser. Place search uses OpenStreetMap Nominatim;
+    aerial imagery loads from Esri. Density benchmarks are indicative — always defer
+    to your venue's safety and occupancy authority.
+  </div>
+</aside>
+
+<section id="stage">
+  <div id="map"></div>
+  <div id="plan-viewport" hidden><canvas id="plan"></canvas></div>
+  <canvas id="overlay"></canvas>
+  <div class="stage-msg" id="geo-fallback" hidden>
+    <div><b>Map couldn't load.</b><br>The Leaflet library or map tiles are unreachable
+    (offline or blocked network). You can still use <b>Site plan / PDF</b> mode on the left.</div>
+  </div>
+  <div class="stage-msg" id="plan-empty" hidden>
+    <div><b>No site plan yet.</b><br>Upload a plan image or PDF on the left, calibrate
+    its scale with two clicks, then draw the venue area.</div>
+  </div>
+  <div id="hint" hidden></div>
+  <div id="calib-dialog" hidden>
+    <h3>Set the scale</h3>
+    <p>How long is the line you just marked, in the real world?</p>
+    <div class="calib-row">
+      <div class="field">
+        <label class="field__label" for="calib-dist">Distance</label>
+        <input class="field__input" id="calib-dist" type="number" min="0.1" step="any" placeholder="100">
+      </div>
+      <select id="calib-unit" aria-label="Unit">
+        <option value="ft">feet</option>
+        <option value="m">meters</option>
+      </select>
+    </div>
+    <div class="calib-actions">
+      <button class="btn btn--ghost" id="calib-cancel" type="button">Cancel</button>
+      <button class="btn btn--primary" id="calib-apply" type="button">Apply</button>
+    </div>
+  </div>
+</section>
+</div>
+
+<div id="toast" role="status" aria-live="polite"></div>
+
+<script>
+'use strict';
+
+/* ============================== Constants ============================== */
+
+const STORAGE_KEY = 'crowd-density-v1';
+const THEME_KEY = 'crowd-density-theme';
+const FT_PER_DEG_LAT = 364567.2;          // ~69.05 mi per degree of latitude
+const SQFT_PER_SQM = 10.7639;
+const ACRE_SQFT = 43560;
+const ABS_CAP = 25000;                    // absolute dot budget
+const MIN_SQFT_PP = 2.5;                  // below this people physically can't fit
+const CANDIDATES = 13;                    // best-candidate samples per dot
+const ESRI_TILES = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
+const ESRI_MAX_NATIVE = 19;
+const ESRI_ATTRIB = 'Imagery © Esri — Maxar, Earthstar Geographics, GIS User Community';
+const PDFJS_URL = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+const PDFJS_WORKER = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+// Density benchmarks (sq ft per person), loosest first.
+const RATINGS = [
+  { min: 15,  label: 'Loose — free mingling',        color: 'var(--ok)',     hex: '#248A3D' },
+  { min: 10,  label: 'Comfortable standing',          color: 'var(--ok)',     hex: '#248A3D' },
+  { min: 7,   label: 'Moderate — typical rally',      color: 'var(--info)',   hex: '#0066CC' },
+  { min: 5,   label: 'Dense — concert crowd',         color: 'var(--warn)',   hex: '#BF4800' },
+  { min: 3.5, label: 'Packed — front-of-stage',       color: 'var(--danger)', hex: '#D70015' },
+  { min: 0,   label: 'Unsafe — over crowd-safety limits', color: 'var(--danger)', hex: '#D70015' },
+];
+
+/* ============================== State ============================== */
+
+/* Persisted state. `geo.polygon` is [[lat,lng],…]; `image.polygon` is
+   [[x,y],…] in native image pixels, so recalibrating rescales it for free. */
+let state = {
+  mode: 'geo',
+  title: '',
+  seed: 20260724,
+  count: 5000,
+  dotColor: 'auto',
+  exportScale: 2,
+  geo: { center: [40.77229, -73.97606], zoom: 16, polygon: [] },   // Sheep Meadow
+  image: { dataUrl: null, natW: 0, natH: 0, calib: null, polygon: [] },
+  scenarios: [],
+};
+
+/* Derived, never persisted. One planar frame in feet shared by both modes;
+   everything downstream (scatter, stats, dots, exports) lives here. */
+const world = {
+  anchor: null,       // geo: {lat0, lng0, ftLng}
+  polyFt: null,       // [[x,y],…] feet
+  area: 0,            // sq ft
+  bbox: null,
+  cap: 0,
+  pts: null,          // Float32Array, 2*cap, ordered blue-noise
+  generated: 0,
+  genToken: 0,
+};
+
+let map = null;                 // Leaflet map (geo mode)
+let planBitmap = null;          // HTMLImageElement (image mode)
+let planView = { scale: 1, ox: 0, oy: 0 };   // screen = o + scale * imagePx
+let tool = 'pan';               // 'pan' | 'draw' | 'calibrate'
+let drawVerts = [];             // in-progress polygon, mode-native coords
+let mousePos = null;            // last pointer position on stage (CSS px)
+let calibClicks = [];           // two [imgX, imgY] points
+let dragVertex = -1;            // index of polygon vertex being dragged
+const tileCache = new Map();    // url -> Promise<HTMLImageElement>
+
+/* ============================== Helpers ============================== */
+
+const $ = id => document.getElementById(id);
+const stage = $('stage'), overlay = $('overlay'), planCanvas = $('plan');
+const octx = overlay.getContext('2d'), pctx = planCanvas.getContext('2d');
+const toastEl = $('toast');
+
+let toastTimer = null;
+function toast(msg) {
+  toastEl.textContent = msg;
+  toastEl.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => toastEl.classList.remove('show'), 3000);
+}
+function todayISO() {
+  const d = new Date();
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+function slug(s) {
+  return (s || '').toLowerCase().replace(/[^a-z0-9一-鿿]+/g, '-').replace(/^-+|-+$/g, '');
+}
+function download(url, filename) {
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove();
+}
+function fmtInt(n) { return Math.round(n).toLocaleString('en-US'); }
+function fmt1(n) { return (Math.round(n * 10) / 10).toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 }); }
+function clamp(v, a, b) { return v < a ? a : v > b ? b : v; }
+function mulberry32(a) {
+  return function () {
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+function shoelace(poly) {
+  let s = 0;
+  for (let i = 0, n = poly.length; i < n; i++) {
+    const [x1, y1] = poly[i], [x2, y2] = poly[(i + 1) % n];
+    s += x1 * y2 - x2 * y1;
+  }
+  return Math.abs(s) / 2;
+}
+function pointInPoly(x, y, poly) {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const xi = poly[i][0], yi = poly[i][1], xj = poly[j][0], yj = poly[j][1];
+    if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
+}
+function ratingFor(sqftPP) {
+  for (const r of RATINGS) if (sqftPP >= r.min) return r;
+  return RATINGS[RATINGS.length - 1];
+}
+
+/* ============================== Persistence ============================== */
+
+let saveTimer = null;
+function save() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    try {
+      const copy = JSON.parse(JSON.stringify(state));
+      // Respect localStorage quota: drop very large plan images, keep the rest.
+      if (copy.image.dataUrl && copy.image.dataUrl.length > 3.5e6) copy.image.dataUrl = null;
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(copy));
+    } catch (e) {}
+  }, 400);
+}
+function load() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return;
+    const s = JSON.parse(raw);
+    if (!s || typeof s !== 'object') return;
+    state.mode = s.mode === 'image' ? 'image' : 'geo';
+    state.title = typeof s.title === 'string' ? s.title : '';
+    state.seed = Number.isFinite(s.seed) ? s.seed : state.seed;
+    state.count = Number.isFinite(s.count) ? Math.max(0, Math.round(s.count)) : state.count;
+    state.dotColor = typeof s.dotColor === 'string' ? s.dotColor : 'auto';
+    state.exportScale = s.exportScale === 3 ? 3 : 2;
+    if (s.geo && typeof s.geo === 'object') {
+      if (Array.isArray(s.geo.center) && s.geo.center.length === 2) state.geo.center = s.geo.center;
+      if (Number.isFinite(s.geo.zoom)) state.geo.zoom = s.geo.zoom;
+      if (Array.isArray(s.geo.polygon)) state.geo.polygon = s.geo.polygon.filter(p => Array.isArray(p) && p.length === 2);
+    }
+    if (s.image && typeof s.image === 'object') {
+      state.image.dataUrl = typeof s.image.dataUrl === 'string' ? s.image.dataUrl : null;
+      state.image.natW = Number.isFinite(s.image.natW) ? s.image.natW : 0;
+      state.image.natH = Number.isFinite(s.image.natH) ? s.image.natH : 0;
+      state.image.calib = (s.image.calib && Number.isFinite(s.image.calib.distFt)) ? s.image.calib : null;
+      if (Array.isArray(s.image.polygon)) state.image.polygon = s.image.polygon.filter(p => Array.isArray(p) && p.length === 2);
+    }
+    if (Array.isArray(s.scenarios)) {
+      state.scenarios = s.scenarios
+        .filter(x => x && Number.isFinite(x.count))
+        .map(x => ({ id: x.id || String(Math.random()).slice(2), count: Math.round(x.count) }))
+        .slice(0, 6);
+    }
+  } catch (e) {}
+}
+
+/* ============================== Theme ============================== */
+
+const THEME_MODES = ['auto', 'light', 'dark'];
+const THEME_ICONS = {
+  auto: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 0 18z" fill="currentColor" stroke="none"/></svg>',
+  light: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4.5"/><path d="M12 2.5v2.5M12 19v2.5M2.5 12H5M19 12h2.5M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M19.1 4.9l-1.8 1.8M6.7 17.3l-1.8 1.8"/></svg>',
+  dark: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>',
+};
+let themeMode = THEME_MODES.includes(localStorage.getItem(THEME_KEY)) ? localStorage.getItem(THEME_KEY) : 'auto';
+const darkMQ = window.matchMedia('(prefers-color-scheme: dark)');
+const themeBtn = $('theme');
+
+function applyTheme() {
+  const dark = themeMode === 'dark' || (themeMode === 'auto' && darkMQ.matches);
+  document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+  document.documentElement.style.colorScheme = dark ? 'dark' : 'light';
+  themeBtn.innerHTML = THEME_ICONS[themeMode];
+  themeBtn.title = 'Theme: ' + (themeMode === 'auto' ? 'Auto (follows system)' : themeMode[0].toUpperCase() + themeMode.slice(1));
+  themeBtn.setAttribute('aria-label', themeBtn.title);
+  drawPlan(); draw();
+}
+themeBtn.addEventListener('click', () => {
+  themeMode = THEME_MODES[(THEME_MODES.indexOf(themeMode) + 1) % THEME_MODES.length];
+  try { localStorage.setItem(THEME_KEY, themeMode); } catch (e) {}
+  applyTheme();
+});
+darkMQ.addEventListener('change', () => { if (themeMode === 'auto') applyTheme(); });
+
+/* ============================== Surface (mode abstraction) ==============================
+
+   Everything downstream works in "world feet" plus one affine transform to
+   screen CSS px:  sx = tx + k*x ;  sy = ty + ys*y   (ys = -k geo, +k image).
+   Geo anchors an equirectangular frame at the polygon centroid — exact enough
+   over a venue-sized extent that one affine per frame renders 25k dots without
+   touching the Leaflet projection per point.                                  */
+
+function stageSize() {
+  return { w: stage.clientWidth, h: stage.clientHeight };
+}
+function calibPpf() {   // image pixels per foot
+  const c = state.image.calib;
+  if (!c) return 0;
+  const dx = c.p2[0] - c.p1[0], dy = c.p2[1] - c.p1[1];
+  return Math.hypot(dx, dy) / c.distFt;
+}
+function currentTransform() {
+  if (state.mode === 'geo') {
+    if (!map || !world.anchor) return null;
+    const a = world.anchor;
+    const p0 = map.latLngToContainerPoint([a.lat0, a.lng0]);
+    const pE = map.latLngToContainerPoint([a.lat0, a.lng0 + 0.001]);
+    const k = Math.abs(pE.x - p0.x) / (0.001 * a.ftLng);
+    return { k, tx: p0.x, ty: p0.y, ys: -k };
+  }
+  const ppf = calibPpf();
+  if (!planBitmap || !ppf) return null;
+  const k = planView.scale * ppf;
+  return { k, tx: planView.ox, ty: planView.oy, ys: k };
+}
+function screenToWorld(cx, cy) {
+  if (state.mode === 'geo') {
+    const a = world.anchor;
+    const ll = map.containerPointToLatLng([cx, cy]);
+    return [(ll.lng - a.lng0) * a.ftLng, (ll.lat - a.lat0) * FT_PER_DEG_LAT];
+  }
+  const ppf = calibPpf();
+  return [(cx - planView.ox) / planView.scale / ppf, (cy - planView.oy) / planView.scale / ppf];
+}
+function vertexToScreen(v) {   // v in mode-native coords (latlng or imgPx)
+  if (state.mode === 'geo') {
+    const p = map.latLngToContainerPoint(v);
+    return [p.x, p.y];
+  }
+  return [planView.ox + planView.scale * v[0], planView.oy + planView.scale * v[1]];
+}
+function screenToVertex(cx, cy) {
+  if (state.mode === 'geo') {
+    const ll = map.containerPointToLatLng([cx, cy]);
+    return [ll.lat, ll.lng];
+  }
+  return [(cx - planView.ox) / planView.scale, (cy - planView.oy) / planView.scale];
+}
+function activePolygon() { return state.mode === 'geo' ? state.geo.polygon : state.image.polygon; }
+function setActivePolygon(p) {
+  if (state.mode === 'geo') state.geo.polygon = p; else state.image.polygon = p;
+}
+function surfaceReady() {
+  if (state.mode === 'geo') return !!map;
+  return !!planBitmap && !!state.image.calib;
+}
+
+/* Rebuild the world-feet frame from the active polygon. */
+function rebuildWorld() {
+  world.anchor = null; world.polyFt = null; world.area = 0; world.bbox = null; world.cap = 0;
+  const poly = activePolygon();
+  if (poly.length >= 3) {
+    if (state.mode === 'geo') {
+      if (map) {
+        let lat0 = 0, lng0 = 0;
+        for (const [la, ln] of poly) { lat0 += la; lng0 += ln; }
+        lat0 /= poly.length; lng0 /= poly.length;
+        const ftLng = FT_PER_DEG_LAT * Math.cos(lat0 * Math.PI / 180);
+        world.anchor = { lat0, lng0, ftLng };
+        world.polyFt = poly.map(([la, ln]) => [(ln - lng0) * ftLng, (la - lat0) * FT_PER_DEG_LAT]);
+      }
+    } else if (planBitmap && state.image.calib) {
+      const ppf = calibPpf();
+      if (ppf > 0) world.polyFt = poly.map(([x, y]) => [x / ppf, y / ppf]);
+    }
+  }
+  if (world.polyFt) {
+    world.area = shoelace(world.polyFt);
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const [x, y] of world.polyFt) {
+      if (x < x0) x0 = x; if (x > x1) x1 = x;
+      if (y < y0) y0 = y; if (y > y1) y1 = y;
+    }
+    world.bbox = { x0, y0, x1, y1 };
+    if (world.area < 20) { world.polyFt = null; world.area = 0; }
+  }
+  if (world.polyFt) {
+    world.cap = Math.max(1, Math.min(ABS_CAP, Math.floor(world.area / MIN_SQFT_PP)));
+    if (state.count > world.cap) state.count = world.cap;
+  }
+  refreshAreaReadout();
+  refreshCrowdUI();
+  refreshGates();
+  save();
+}
+
+/* ============================== Blue-noise sampler ==============================
+
+   Mitchell's best-candidate, chunked so the UI never blocks. Natively
+   progressive: the first N points are well-distributed for every N, which is
+   what makes the population slider morph smoothly — changing the count never
+   re-scatters, it just draws a different prefix of the same sequence.        */
+
+function regenerate() {
+  world.genToken++;
+  const token = world.genToken;
+  world.pts = null; world.generated = 0;
+  if (!world.polyFt) { refreshCrowdUI(); draw(); return; }
+
+  const poly = world.polyFt, bbox = world.bbox, cap = world.cap;
+  const bw = bbox.x1 - bbox.x0, bh = bbox.y1 - bbox.y0;
+  const cell = Math.max(1e-6, Math.sqrt(world.area / cap));
+  const cols = Math.max(1, Math.ceil(bw / cell));
+  const rows = Math.max(1, Math.ceil(bh / cell));
+  const head = new Int32Array(cols * rows).fill(-1);
+  const nxt = new Int32Array(cap);
+  const pts = new Float32Array(cap * 2);
+  const rng = mulberry32(state.seed >>> 0);
+  let n = 0;
+
+  function randomInPoly() {
+    for (let t = 0; t < 800; t++) {
+      const x = bbox.x0 + rng() * bw, y = bbox.y0 + rng() * bh;
+      if (pointInPoly(x, y, poly)) return [x, y];
+    }
+    return null;
+  }
+  function cellOf(x, y) {
+    const gx = clamp(Math.floor((x - bbox.x0) / cell), 0, cols - 1);
+    const gy = clamp(Math.floor((y - bbox.y0) / cell), 0, rows - 1);
+    return gy * cols + gx;
+  }
+  function nearestDistSq(x, y) {
+    const gx = clamp(Math.floor((x - bbox.x0) / cell), 0, cols - 1);
+    const gy = clamp(Math.floor((y - bbox.y0) / cell), 0, rows - 1);
+    let best = Infinity, foundRing = -1;
+    const maxR = Math.max(cols, rows);
+    for (let r = 0; r <= maxR; r++) {
+      const xa = Math.max(0, gx - r), xb = Math.min(cols - 1, gx + r);
+      const ya = Math.max(0, gy - r), yb = Math.min(rows - 1, gy + r);
+      for (let cy = ya; cy <= yb; cy++) {
+        const onYEdge = (cy === gy - r || cy === gy + r);
+        for (let cx = xa; cx <= xb; cx++) {
+          if (!onYEdge && cx !== gx - r && cx !== gx + r) continue;   // ring cells only
+          for (let i = head[cy * cols + cx]; i !== -1; i = nxt[i]) {
+            const dx = pts[2 * i] - x, dy = pts[2 * i + 1] - y;
+            const d = dx * dx + dy * dy;
+            if (d < best) best = d;
+          }
+        }
+      }
+      if (best < Infinity && foundRing < 0) foundRing = r;
+      if (foundRing >= 0 && r >= foundRing + 1) break;
+    }
+    return best;
+  }
+
+  world.pts = pts;
+  refreshCrowdUI();
+
+  function step() {
+    if (token !== world.genToken) return;   // superseded by a newer polygon/seed
+    const target = Math.min(n + 1200, cap);
+    let starved = false;
+    while (n < target) {
+      let bx = 0, by = 0, bd = -1;
+      for (let c = 0; c < CANDIDATES; c++) {
+        const p = randomInPoly();
+        if (!p) { starved = true; break; }
+        const d = n === 0 ? 1 : nearestDistSq(p[0], p[1]);
+        if (d > bd) { bd = d; bx = p[0]; by = p[1]; }
+      }
+      if (starved) break;
+      pts[2 * n] = bx; pts[2 * n + 1] = by;
+      const ci = cellOf(bx, by);
+      nxt[n] = head[ci]; head[ci] = n; n++;
+    }
+    world.generated = n;
+    refreshCrowdUI();
+    refreshStats();
+    draw();
+    if (starved) { world.cap = Math.max(1, n); if (state.count > n) state.count = n; refreshCrowdUI(); return; }
+    if (n < cap) setTimeout(step, 0);
+  }
+  setTimeout(step, 0);
+}
+
+/* ============================== Rendering ============================== */
+
+function resizeCanvases() {
+  const { w, h } = stageSize();
+  const dpr = window.devicePixelRatio || 1;
+  for (const c of [overlay, planCanvas]) {
+    c.width = Math.max(1, Math.round(w * dpr));
+    c.height = Math.max(1, Math.round(h * dpr));
+    c.style.width = w + 'px';
+    c.style.height = h + 'px';
+  }
+  if (map) map.invalidateSize({ animate: false });
+  drawPlan();
+  draw();
+}
+
+function isDark() { return document.documentElement.dataset.theme === 'dark'; }
+
+function dotStyle() {
+  let fill = state.dotColor;
+  if (fill === 'auto') fill = state.mode === 'geo' ? '#FFFFFF' : '#0A66E8';
+  const light = fill === '#FFFFFF' || fill === '#FFD60A';
+  const ring = light ? 'rgba(0,0,0,0.55)' : 'rgba(255,255,255,0.75)';
+  return { fill, ring };
+}
+
+/* Dots + polygon, shared by the live overlay and both exports.
+   T is {k, tx, ty, ys} in the target canvas' CSS-px space; `s` is the
+   device/export pixel ratio applied via setTransform by the caller. */
+function drawDotsOn(ctx, T, count, viewW, viewH, rScale) {
+  if (!world.pts) return;
+  const n = Math.min(count, world.generated);
+  if (n <= 0) return;
+  const rs = rScale || 1;   // keeps the min/max dot size proportional in exports
+  const r = clamp(0.9 * T.k, 1.3 * rs, 5 * rs);
+  const ringW = 0.7 * rs;
+  const { fill, ring } = dotStyle();
+  const pts = world.pts, k = T.k, tx = T.tx, ty = T.ty, ys = T.ys;
+  const m = r + 2;
+  // ring pass then fill pass — two batched paths, fast enough for 25k dots
+  ctx.beginPath();
+  for (let i = 0; i < n; i++) {
+    const sx = tx + k * pts[2 * i], sy = ty + ys * pts[2 * i + 1];
+    if (sx < -m || sy < -m || sx > viewW + m || sy > viewH + m) continue;
+    ctx.moveTo(sx + r + ringW, sy);
+    ctx.arc(sx, sy, r + ringW, 0, 6.2832);
+  }
+  ctx.fillStyle = ring;
+  ctx.fill();
+  ctx.beginPath();
+  for (let i = 0; i < n; i++) {
+    const sx = tx + k * pts[2 * i], sy = ty + ys * pts[2 * i + 1];
+    if (sx < -m || sy < -m || sx > viewW + m || sy > viewH + m) continue;
+    ctx.moveTo(sx + r, sy);
+    ctx.arc(sx, sy, r, 0, 6.2832);
+  }
+  ctx.fillStyle = fill;
+  ctx.fill();
+}
+
+function polyScreenPath(ctx, T) {
+  const p = world.polyFt;
+  ctx.beginPath();
+  for (let i = 0; i < p.length; i++) {
+    const sx = T.tx + T.k * p[i][0], sy = T.ty + T.ys * p[i][1];
+    if (i === 0) ctx.moveTo(sx, sy); else ctx.lineTo(sx, sy);
+  }
+  ctx.closePath();
+}
+
+function drawPolygonOn(ctx, T, opts) {
+  if (!world.polyFt) return;
+  polyScreenPath(ctx, T);
+  ctx.fillStyle = 'rgba(10,132,255,0.08)';
+  ctx.fill();
+  ctx.lineJoin = 'round';
+  ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+  ctx.lineWidth = 4;
+  ctx.stroke();
+  polyScreenPath(ctx, T);
+  ctx.strokeStyle = '#0A84FF';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  if (opts && opts.handles) {
+    const p = world.polyFt;
+    for (let i = 0; i < p.length; i++) {
+      const sx = T.tx + T.k * p[i][0], sy = T.ty + T.ys * p[i][1];
+      ctx.beginPath(); ctx.arc(sx, sy, 5, 0, 6.2832);
+      ctx.fillStyle = '#FFFFFF'; ctx.fill();
+      ctx.strokeStyle = '#0A84FF'; ctx.lineWidth = 2; ctx.stroke();
+    }
+  }
+}
+
+/* The image-mode base layer (the uploaded plan). */
+function drawPlan() {
+  if (state.mode !== 'image') return;
+  const { w, h } = stageSize();
+  const dpr = window.devicePixelRatio || 1;
+  pctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  pctx.clearRect(0, 0, w, h);
+  if (!planBitmap) return;
+  pctx.imageSmoothingQuality = 'high';
+  pctx.drawImage(planBitmap, planView.ox, planView.oy,
+    planBitmap.naturalWidth * planView.scale, planBitmap.naturalHeight * planView.scale);
+}
+
+/* The live overlay: polygon, dots, in-progress drawing, calibration marks. */
+function draw() {
+  const { w, h } = stageSize();
+  const dpr = window.devicePixelRatio || 1;
+  octx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  octx.clearRect(0, 0, w, h);
+
+  // calibration marks (image mode)
+  if (tool === 'calibrate' || $('calib-dialog').hidden === false) {
+    octx.strokeStyle = '#FF9F0A'; octx.fillStyle = '#FF9F0A'; octx.lineWidth = 2;
+    const ptsS = calibClicks.map(p => [planView.ox + planView.scale * p[0], planView.oy + planView.scale * p[1]]);
+    if (ptsS.length === 2) {
+      octx.beginPath(); octx.moveTo(ptsS[0][0], ptsS[0][1]); octx.lineTo(ptsS[1][0], ptsS[1][1]); octx.stroke();
+    } else if (ptsS.length === 1 && mousePos) {
+      octx.setLineDash([6, 5]);
+      octx.beginPath(); octx.moveTo(ptsS[0][0], ptsS[0][1]); octx.lineTo(mousePos[0], mousePos[1]); octx.stroke();
+      octx.setLineDash([]);
+    }
+    for (const [sx, sy] of ptsS) {
+      octx.beginPath(); octx.arc(sx, sy, 5.5, 0, 6.2832); octx.fill();
+      octx.beginPath(); octx.arc(sx, sy, 8.5, 0, 6.2832); octx.stroke();
+    }
+  }
+
+  // in-progress polygon
+  if (tool === 'draw' && drawVerts.length) {
+    const ptsS = drawVerts.map(vertexToScreen);
+    octx.lineJoin = 'round';
+    octx.beginPath();
+    ptsS.forEach(([x, y], i) => i === 0 ? octx.moveTo(x, y) : octx.lineTo(x, y));
+    if (mousePos) octx.lineTo(mousePos[0], mousePos[1]);
+    octx.strokeStyle = 'rgba(255,255,255,0.9)'; octx.lineWidth = 4; octx.stroke();
+    octx.beginPath();
+    ptsS.forEach(([x, y], i) => i === 0 ? octx.moveTo(x, y) : octx.lineTo(x, y));
+    if (mousePos) octx.lineTo(mousePos[0], mousePos[1]);
+    octx.strokeStyle = '#0A84FF'; octx.lineWidth = 2; octx.stroke();
+    for (let i = 0; i < ptsS.length; i++) {
+      octx.beginPath(); octx.arc(ptsS[i][0], ptsS[i][1], i === 0 ? 6 : 4.5, 0, 6.2832);
+      octx.fillStyle = i === 0 ? '#0A84FF' : '#FFFFFF'; octx.fill();
+      octx.strokeStyle = i === 0 ? '#FFFFFF' : '#0A84FF'; octx.lineWidth = 2; octx.stroke();
+    }
+    return;   // hide the finished-state layers while re-drawing
+  }
+
+  const T = currentTransform();
+  if (!T || !world.polyFt) return;
+  drawPolygonOn(octx, T, { handles: tool === 'pan' });
+  drawDotsOn(octx, T, state.count, w, h);
+}
+
+/* ============================== UI refresh ============================== */
+
+function refreshAreaReadout() {
+  const el = $('area-readout');
+  if (!world.polyFt) {
+    el.textContent = surfaceReady()
+      ? 'Outline the lawn or venue footprint on the right.'
+      : (state.mode === 'image' ? 'Load and calibrate a site plan first.' : 'Waiting for the map…');
+    return;
+  }
+  const a = world.area;
+  let txt = '<b>' + fmtInt(a) + ' sq ft</b>';
+  if (a >= ACRE_SQFT / 2) txt += ' · ' + fmt1(a / ACRE_SQFT) + ' acres';
+  txt += ' · ' + fmtInt(a / SQFT_PER_SQM) + ' m²';
+  el.innerHTML = txt;
+}
+
+function refreshCrowdUI() {
+  const slider = $('count-slider'), num = $('count-num');
+  const cap = world.cap || 0;
+  slider.max = Math.max(cap, 10);
+  slider.value = state.count;
+  num.value = state.count;
+  const gp = $('gen-progress');
+  if (world.polyFt && world.generated < cap && world.pts) {
+    gp.textContent = 'placing dots… ' + fmtInt(world.generated) + ' / ' + fmtInt(cap);
+  } else gp.textContent = '';
+  // highlight matching preset
+  document.querySelectorAll('.preset').forEach(b => {
+    const target = world.area ? Math.min(cap, Math.round(world.area / Number(b.dataset.sqft))) : -1;
+    b.classList.toggle('is-active', world.area > 0 && Math.abs(target - state.count) <= Math.max(2, target * 0.005));
+  });
+}
+
+function refreshStats() {
+  $('stat-count-num').textContent = fmtInt(state.count);
+  const a = world.area;
+  if (!a || !state.count) {
+    $('stat-area').textContent = a ? fmtInt(a) + ' sq ft' : '—';
+    $('stat-sqftpp').textContent = '—';
+    $('stat-ppm2').textContent = '—';
+    $('stat-spacing').textContent = '—';
+    const chip = $('rating-chip');
+    chip.textContent = state.count ? '—' : 'Empty venue';
+    chip.style.background = 'var(--ink-3)';
+    return;
+  }
+  const sqftPP = a / state.count;
+  const ppm2 = SQFT_PER_SQM / sqftPP;
+  const spacing = Math.sqrt(sqftPP);
+  $('stat-area').textContent = fmtInt(a) + ' sq ft' + (a >= ACRE_SQFT / 2 ? ' (' + fmt1(a / ACRE_SQFT) + ' ac)' : '');
+  $('stat-sqftpp').textContent = fmt1(sqftPP) + ' sq ft';
+  $('stat-ppm2').textContent = fmt1(ppm2) + ' people / m²';
+  $('stat-spacing').textContent = '≈ ' + fmt1(spacing) + ' ft apart';
+  const r = ratingFor(sqftPP);
+  const chip = $('rating-chip');
+  chip.textContent = r.label;
+  chip.style.background = r.color;
+}
+
+function refreshGates() {
+  const hasPoly = !!world.polyFt;
+  $('sec-crowd').classList.toggle('is-disabled', !hasPoly);
+  $('sec-stats').classList.toggle('is-disabled', !hasPoly);
+  $('sec-scenarios').classList.toggle('is-disabled', !hasPoly);
+  $('sec-export').classList.toggle('is-disabled', !hasPoly);
+  $('draw').disabled = !surfaceReady();
+  $('clear-poly').disabled = !hasPoly && !drawVerts.length;
+  $('calibrate').disabled = !planBitmap;
+  $('export-board').disabled = state.scenarios.length < 2;
+  refreshStats();
+}
+
+function setHint(msg) {
+  const el = $('hint');
+  if (!msg) { el.hidden = true; return; }
+  el.textContent = msg;
+  el.hidden = false;
+}
+
+function setTool(t) {
+  tool = t;
+  overlay.classList.toggle('capture', t !== 'pan');
+  $('draw').textContent = t === 'draw' ? 'Cancel drawing' : (world.polyFt ? 'Redraw area' : 'Draw area');
+  if (t === 'draw') setHint('Click to outline the area — double-click, press Enter, or click the first point to finish. Esc cancels.');
+  else if (t === 'calibrate') setHint(calibClicks.length ? 'Click the second point.' : 'Click two points that are a known real-world distance apart (a field line, a path, a building edge).');
+  else setHint(null);
+  draw();
+}
+
+/* ============================== Mode switching ============================== */
+
+function applyMode() {
+  const geo = state.mode === 'geo';
+  $('tab-geo').classList.toggle('is-active', geo);
+  $('tab-image').classList.toggle('is-active', !geo);
+  $('geo-controls').hidden = !geo;
+  $('image-controls').hidden = geo;
+  $('map').style.display = geo ? '' : 'none';
+  $('plan-viewport').hidden = geo;
+  $('geo-fallback').hidden = !(geo && !window.L);
+  $('plan-empty').hidden = geo || !!planBitmap;
+  cancelDrawing();
+  cancelCalibration();
+  if (geo && !map) initMap();
+  if (geo && map) map.invalidateSize({ animate: false });
+  rebuildWorld();
+  regenerate();
+  drawPlan();
+  draw();
+  save();
+}
+
+function switchMode(m) {
+  if (state.mode === m) return;
+  state.mode = m;
+  applyMode();
+}
+$('tab-geo').addEventListener('click', () => switchMode('geo'));
+$('tab-image').addEventListener('click', () => switchMode('image'));
+
+/* ============================== Geo mode (Leaflet) ============================== */
+
+function initMap() {
+  if (!window.L) { $('geo-fallback').hidden = false; return; }
+  map = L.map('map', { zoomSnap: 1, attributionControl: true })
+    .setView(state.geo.center, state.geo.zoom);
+  L.tileLayer(ESRI_TILES, {
+    maxNativeZoom: ESRI_MAX_NATIVE,
+    maxZoom: 21,
+    crossOrigin: 'anonymous',
+    attribution: ESRI_ATTRIB,
+  }).addTo(map);
+  map.on('move zoom viewreset', draw);
+  map.on('moveend zoomend', () => {
+    const c = map.getCenter();
+    state.geo.center = [c.lat, c.lng];
+    state.geo.zoom = map.getZoom();
+    save();
+  });
+  map.doubleClickZoom.disable();   // dblclick finishes polygons instead
+}
+
+async function searchAddress() {
+  const q = $('addr').value.trim();
+  const box = $('addr-results');
+  if (!q) return;
+  box.innerHTML = '<div class="none">Searching…</div>';
+  try {
+    const r = await fetch('https://nominatim.openstreetmap.org/search?format=json&limit=5&q=' + encodeURIComponent(q));
+    if (!r.ok) throw new Error(String(r.status));
+    const results = await r.json();
+    box.innerHTML = '';
+    if (!Array.isArray(results) || !results.length) {
+      box.innerHTML = '<div class="none">No places found — try adding a city or zip.</div>';
+      return;
+    }
+    for (const res of results) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = res.display_name;
+      b.title = res.display_name;
+      b.addEventListener('click', () => {
+        if (map) map.setView([Number(res.lat), Number(res.lon)], 17);
+        box.innerHTML = '';
+      });
+      box.appendChild(b);
+    }
+  } catch (e) {
+    box.innerHTML = '<div class="none">Search failed (offline or rate-limited) — you can still pan/zoom the map by hand.</div>';
+  }
+}
+$('addr-go').addEventListener('click', searchAddress);
+$('addr').addEventListener('keydown', e => { if (e.key === 'Enter') searchAddress(); });
+
+/* ============================== Image mode ============================== */
+
+function fitPlanView() {
+  if (!planBitmap) return;
+  const { w, h } = stageSize();
+  const s = Math.min(w / planBitmap.naturalWidth, h / planBitmap.naturalHeight) * 0.94;
+  planView = {
+    scale: s,
+    ox: (w - planBitmap.naturalWidth * s) / 2,
+    oy: (h - planBitmap.naturalHeight * s) / 2,
+  };
+  drawPlan(); draw();
+}
+
+function setPlanImage(dataUrl, opts) {
+  const img = new Image();
+  img.onload = () => {
+    planBitmap = img;
+    state.image.natW = img.naturalWidth;
+    state.image.natH = img.naturalHeight;
+    state.image.dataUrl = dataUrl;
+    if (!opts || !opts.keepSetup) {
+      state.image.calib = null;
+      state.image.polygon = [];
+      state.scenarios = [];
+      renderScenarios();
+    }
+    $('plan-empty').hidden = true;
+    fitPlanView();
+    refreshCalibStatus();
+    rebuildWorld();
+    regenerate();
+    if (!state.image.calib) {
+      toast('Plan loaded — now calibrate the scale (two clicks on a known distance).');
+      startCalibration();
+    }
+    save();
+  };
+  img.onerror = () => toast('That image could not be read.');
+  img.src = dataUrl;
+}
+
+async function handleFile(file) {
+  if (!file) return;
+  const isPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
+  try {
+    if (isPdf) {
+      toast('Rendering PDF…');
+      await ensurePdfjs();
+      const buf = await file.arrayBuffer();
+      const doc = await pdfjsLib.getDocument({ data: buf }).promise;
+      const page = await doc.getPage(1);
+      let vp = page.getViewport({ scale: 1 });
+      const scale = Math.min(3, 2600 / Math.max(vp.width, vp.height));
+      vp = page.getViewport({ scale });
+      const c = document.createElement('canvas');
+      c.width = Math.round(vp.width); c.height = Math.round(vp.height);
+      const cx = c.getContext('2d');
+      cx.fillStyle = '#FFFFFF'; cx.fillRect(0, 0, c.width, c.height);
+      await page.render({ canvasContext: cx, viewport: vp }).promise;
+      setPlanImage(c.toDataURL('image/png'));
+    } else {
+      const reader = new FileReader();
+      reader.onload = () => setPlanImage(String(reader.result));
+      reader.onerror = () => toast('Could not read that file.');
+      reader.readAsDataURL(file);
+    }
+  } catch (e) {
+    toast(isPdf
+      ? 'PDF rendering failed — try exporting the page as a PNG/JPG and uploading that.'
+      : 'Could not load that file.');
+  }
+}
+
+let pdfjsReady = null;
+function ensurePdfjs() {
+  if (window.pdfjsLib) return Promise.resolve();
+  if (pdfjsReady) return pdfjsReady;
+  pdfjsReady = new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = PDFJS_URL;
+    s.onload = () => { pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS_WORKER; resolve(); };
+    s.onerror = () => { pdfjsReady = null; reject(new Error('pdf.js failed to load')); };
+    document.head.appendChild(s);
+  });
+  return pdfjsReady;
+}
+
+const dropzone = $('dropzone');
+dropzone.addEventListener('click', () => $('file').click());
+$('file').addEventListener('change', e => { handleFile(e.target.files[0]); e.target.value = ''; });
+['dragover', 'dragenter'].forEach(ev => dropzone.addEventListener(ev, e => { e.preventDefault(); dropzone.classList.add('drag'); }));
+['dragleave', 'drop'].forEach(ev => dropzone.addEventListener(ev, e => { e.preventDefault(); dropzone.classList.remove('drag'); }));
+dropzone.addEventListener('drop', e => handleFile(e.dataTransfer.files[0]));
+
+function refreshCalibStatus() {
+  const el = $('calib-status');
+  if (!planBitmap) { el.textContent = 'No plan loaded'; return; }
+  const c = state.image.calib;
+  if (!c) { el.innerHTML = '<b style="color:var(--warn)">Not calibrated</b>'; return; }
+  const ppf = calibPpf();
+  el.innerHTML = 'Calibrated · <b>' + fmt1(c.distFt) + ' ft</b> reference (' + fmt1(ppf) + ' px/ft)';
+}
+
+/* --- calibration flow --- */
+function startCalibration() {
+  if (!planBitmap) return;
+  calibClicks = [];
+  $('calib-dialog').hidden = true;
+  setTool('calibrate');
+}
+function cancelCalibration() {
+  if (tool === 'calibrate') setTool('pan');
+  calibClicks = [];
+  $('calib-dialog').hidden = true;
+}
+$('calibrate').addEventListener('click', startCalibration);
+$('calib-cancel').addEventListener('click', () => { cancelCalibration(); draw(); });
+$('calib-apply').addEventListener('click', applyCalibration);
+$('calib-dist').addEventListener('keydown', e => { if (e.key === 'Enter') applyCalibration(); });
+
+function applyCalibration() {
+  const v = Number($('calib-dist').value);
+  if (!(v > 0)) { toast('Enter the real distance between the two points.'); return; }
+  const distFt = $('calib-unit').value === 'm' ? v * 3.28084 : v;
+  const px = Math.hypot(calibClicks[1][0] - calibClicks[0][0], calibClicks[1][1] - calibClicks[0][1]);
+  if (px < 8) { toast('Those points are too close together — pick two farther apart.'); startCalibration(); return; }
+  state.image.calib = { p1: calibClicks[0], p2: calibClicks[1], distFt };
+  $('calib-dialog').hidden = true;
+  calibClicks = [];
+  setTool('pan');
+  refreshCalibStatus();
+  rebuildWorld();
+  regenerate();
+  toast('Scale set — now draw the venue area.');
+  save();
+}
+
+/* --- image pan & zoom --- */
+function zoomPlanAt(cx, cy, factor) {
+  const ns = clamp(planView.scale * factor, 0.02, 40);
+  const f = ns / planView.scale;
+  planView.ox = cx - (cx - planView.ox) * f;
+  planView.oy = cy - (cy - planView.oy) * f;
+  planView.scale = ns;
+  drawPlan(); draw();
+}
+stage.addEventListener('wheel', e => {
+  if (state.mode !== 'image' || !planBitmap) return;
+  e.preventDefault();
+  const rect = stage.getBoundingClientRect();
+  zoomPlanAt(e.clientX - rect.left, e.clientY - rect.top, Math.pow(1.0015, -e.deltaY));
+}, { passive: false });
+
+/* ============================== Stage pointer handling ============================== */
+
+function stageXY(e) {
+  const rect = stage.getBoundingClientRect();
+  return [e.clientX - rect.left, e.clientY - rect.top];
+}
+function hitVertex(cx, cy) {
+  const poly = activePolygon();
+  if (poly.length < 3 || !surfaceReady()) return -1;
+  for (let i = 0; i < poly.length; i++) {
+    const [sx, sy] = vertexToScreen(poly[i]);
+    if ((sx - cx) ** 2 + (sy - cy) ** 2 <= 100) return i;
+  }
+  return -1;
+}
+
+/* Vertex dragging works in pan mode without stealing the map's events:
+   a capture-phase listener claims the pointer only when a handle is hit. */
+let planPanning = null;
+stage.addEventListener('pointerdown', e => {
+  if (tool !== 'pan' || e.button !== 0) return;
+  const [cx, cy] = stageXY(e);
+  const vi = hitVertex(cx, cy);
+  if (vi >= 0) {
+    dragVertex = vi;
+    e.stopPropagation(); e.preventDefault();
+    stage.setPointerCapture(e.pointerId);
+    return;
+  }
+  if (state.mode === 'image' && planBitmap) {
+    planPanning = { x: cx, y: cy, ox: planView.ox, oy: planView.oy };
+    stage.setPointerCapture(e.pointerId);
+  }
+}, true);
+
+stage.addEventListener('pointermove', e => {
+  const [cx, cy] = stageXY(e);
+  mousePos = [cx, cy];
+  if (dragVertex >= 0) {
+    const poly = activePolygon().slice();
+    poly[dragVertex] = screenToVertex(cx, cy);
+    setActivePolygon(poly);
+    rebuildWorldQuiet();
+    draw();
+    return;
+  }
+  if (planPanning) {
+    planView.ox = planPanning.ox + (cx - planPanning.x);
+    planView.oy = planPanning.oy + (cy - planPanning.y);
+    drawPlan(); draw();
+    return;
+  }
+  if (tool !== 'pan') draw();
+  else if (world.polyFt) {
+    const over = hitVertex(cx, cy) >= 0;
+    stage.style.cursor = over ? 'grab' : '';
+  }
+});
+
+stage.addEventListener('pointerup', e => {
+  if (dragVertex >= 0) {
+    dragVertex = -1;
+    rebuildWorld();
+    regenerate();
+  }
+  planPanning = null;
+});
+stage.addEventListener('pointercancel', () => { dragVertex = -1; planPanning = null; });
+
+/* Like rebuildWorld but without UI churn — used mid-drag so the polygon
+   reshapes live; the full rebuild + regenerate runs on release. */
+function rebuildWorldQuiet() {
+  const poly = activePolygon();
+  if (poly.length < 3) return;
+  if (state.mode === 'geo' && world.anchor) {
+    const a = world.anchor;
+    world.polyFt = poly.map(([la, ln]) => [(ln - a.lng0) * a.ftLng, (la - a.lat0) * FT_PER_DEG_LAT]);
+  } else if (state.mode === 'image' && state.image.calib) {
+    const ppf = calibPpf();
+    world.polyFt = poly.map(([x, y]) => [x / ppf, y / ppf]);
+  }
+}
+
+/* Clicks on the overlay while a tool is active (draw / calibrate). */
+overlay.addEventListener('click', e => {
+  const [cx, cy] = stageXY(e);
+  if (tool === 'calibrate') {
+    calibClicks.push(screenToVertex(cx, cy).slice());
+    if (calibClicks.length === 2) {
+      $('calib-dialog').hidden = false;
+      $('calib-dist').value = '';
+      setHint(null);
+      setTimeout(() => $('calib-dist').focus(), 50);
+    } else setTool('calibrate');
+    draw();
+    return;
+  }
+  if (tool !== 'draw') return;
+  // close if clicking the first vertex again
+  if (drawVerts.length >= 3) {
+    const [fx, fy] = vertexToScreen(drawVerts[0]);
+    if ((fx - cx) ** 2 + (fy - cy) ** 2 <= 121) { finishDrawing(); return; }
+  }
+  // ignore accidental duplicate points (incl. the first click of a dblclick)
+  if (drawVerts.length) {
+    const [lx, ly] = vertexToScreen(drawVerts[drawVerts.length - 1]);
+    if ((lx - cx) ** 2 + (ly - cy) ** 2 <= 25) return;
+  }
+  drawVerts.push(screenToVertex(cx, cy));
+  draw();
+});
+overlay.addEventListener('dblclick', e => {
+  e.preventDefault();
+  if (tool === 'draw') finishDrawing();
+});
+
+function startDrawing() {
+  if (!surfaceReady()) {
+    toast(state.mode === 'image' ? 'Load and calibrate a site plan first.' : 'The map has not loaded.');
+    return;
+  }
+  if (tool === 'draw') { cancelDrawing(); return; }
+  drawVerts = [];
+  setTool('draw');
+}
+function cancelDrawing() {
+  if (tool !== 'draw') return;
+  drawVerts = [];
+  setTool('pan');
+}
+function finishDrawing() {
+  if (drawVerts.length < 3) { toast('Add at least three points to outline an area.'); return; }
+  setActivePolygon(drawVerts.slice());
+  drawVerts = [];
+  setTool('pan');
+  rebuildWorld();
+  if (!world.polyFt) {
+    toast('That outline has almost no area — try again.');
+    setActivePolygon([]);
+    refreshGates();
+    return;
+  }
+  // sensible starting count: comfortable standing density
+  if (!state.count || state.count > world.cap) {
+    state.count = Math.min(world.cap, Math.round(world.area / 10));
+  }
+  regenerate();
+  refreshCrowdUI();
+  toast('Area set: ' + fmtInt(world.area) + ' sq ft. Slide the crowd size to explore densities.');
+  save();
+}
+$('draw').addEventListener('click', startDrawing);
+$('clear-poly').addEventListener('click', () => {
+  setActivePolygon([]);
+  drawVerts = [];
+  setTool('pan');
+  rebuildWorld();
+  regenerate();
+  save();
+});
+
+document.addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+  if (tool === 'draw') {
+    if (e.key === 'Enter') finishDrawing();
+    else if (e.key === 'Escape') cancelDrawing();
+    else if (e.key === 'Backspace') { drawVerts.pop(); draw(); }
+  } else if (tool === 'calibrate' && e.key === 'Escape') cancelCalibration();
+});
+
+/* ============================== Crowd controls ============================== */
+
+function setCount(n, fromSlider) {
+  const cap = world.cap || 0;
+  const c = clamp(Math.round(n) || 0, 0, cap);
+  if (!fromSlider && Math.round(n) > cap && cap > 0) {
+    toast('Capped at ' + fmtInt(cap) + ' — below ' + MIN_SQFT_PP + ' sq ft per person, people physically can’t fit.');
+  }
+  state.count = c;
+  refreshCrowdUI();
+  refreshStats();
+  draw();
+  save();
+}
+$('count-slider').addEventListener('input', e => setCount(Number(e.target.value), true));
+$('count-num').addEventListener('change', e => setCount(Number(e.target.value), false));
+document.querySelectorAll('.preset').forEach(b => {
+  b.addEventListener('click', () => {
+    if (!world.area) return;
+    setCount(Math.min(world.cap, Math.round(world.area / Number(b.dataset.sqft))), false);
+  });
+});
+$('reshuffle').addEventListener('click', () => {
+  state.seed = (Math.random() * 0x7FFFFFFF) | 0;
+  regenerate();
+  save();
+});
+document.querySelectorAll('.swatch').forEach(b => {
+  b.addEventListener('click', () => {
+    state.dotColor = b.dataset.color;
+    document.querySelectorAll('.swatch').forEach(x => x.classList.toggle('is-active', x === b));
+    draw(); save();
+  });
+});
+
+$('title-input').addEventListener('input', e => { state.title = e.target.value; save(); });
+document.querySelectorAll('[data-res]').forEach(b => {
+  b.addEventListener('click', () => {
+    state.exportScale = Number(b.dataset.res);
+    document.querySelectorAll('[data-res]').forEach(x => x.classList.toggle('is-active', x === b));
+    save();
+  });
+});
+
+/* ============================== Scenarios ============================== */
+
+function renderScenarios() {
+  const box = $('scenario-list');
+  box.innerHTML = '';
+  for (const sc of state.scenarios) {
+    const chip = document.createElement('span');
+    chip.className = 'scenario-chip';
+    chip.textContent = fmtInt(sc.count) + ' people ';
+    const x = document.createElement('button');
+    x.type = 'button'; x.textContent = '×'; x.title = 'Remove scenario';
+    x.addEventListener('click', () => {
+      state.scenarios = state.scenarios.filter(s => s.id !== sc.id);
+      renderScenarios(); refreshGates(); save();
+    });
+    chip.appendChild(x);
+    box.appendChild(chip);
+  }
+  $('export-board').disabled = state.scenarios.length < 2;
+}
+$('pin').addEventListener('click', () => {
+  if (!world.polyFt) return;
+  if (state.scenarios.length >= 6) { toast('Up to 6 scenarios on one board — remove one first.'); return; }
+  if (state.scenarios.some(s => s.count === state.count)) { toast('That headcount is already pinned.'); return; }
+  state.scenarios.push({ id: String(Date.now()) + Math.random().toString(36).slice(2, 6), count: state.count });
+  state.scenarios.sort((a, b) => a.count - b.count);
+  renderScenarios();
+  save();
+  toast('Pinned ' + fmtInt(state.count) + ' people. Pin ' + (state.scenarios.length < 2 ? 'at least one more' : 'more or export the board') + '.');
+});
+
+/* ============================== Exports ============================== */
+
+function loadTile(url) {
+  if (tileCache.has(url)) return tileCache.get(url);
+  const p = new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error('tile'));
+    img.src = url;
+  });
+  tileCache.set(url, p);
+  return p;
+}
+
+/* Renders the base layer (satellite tiles or plan image) for the current
+   stage view into an offscreen canvas at `scale`× resolution. */
+async function renderBase(scale, useTiles) {
+  const { w, h } = stageSize();
+  const c = document.createElement('canvas');
+  c.width = Math.round(w * scale); c.height = Math.round(h * scale);
+  const ctx = c.getContext('2d');
+  let failures = 0, total = 0;
+
+  if (state.mode === 'image') {
+    ctx.fillStyle = isDark() ? '#1C1C1E' : '#F5F5F7';
+    ctx.fillRect(0, 0, c.width, c.height);
+    if (planBitmap) {
+      ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(planBitmap, planView.ox * scale, planView.oy * scale,
+        planBitmap.naturalWidth * planView.scale * scale,
+        planBitmap.naturalHeight * planView.scale * scale);
+    }
+    return { canvas: c, failures, total };
+  }
+
+  ctx.fillStyle = '#20242B';
+  ctx.fillRect(0, 0, c.width, c.height);
+  if (!map || !useTiles) return { canvas: c, failures, total };
+
+  const z = Math.round(map.getZoom());
+  const origin = map.getPixelBounds().min;
+  const tz = Math.min(z, ESRI_MAX_NATIVE);
+  const sf = Math.pow(2, z - tz);
+  const ts = 256 * sf;
+  const maxIdx = Math.pow(2, tz) - 1;
+  const jobs = [];
+  for (let txi = Math.floor(origin.x / ts); txi * ts < origin.x + w; txi++) {
+    for (let tyi = Math.floor(origin.y / ts); tyi * ts < origin.y + h; tyi++) {
+      if (tyi < 0 || tyi > maxIdx || txi < 0 || txi > maxIdx) continue;
+      total++;
+      const url = ESRI_TILES.replace('{z}', tz).replace('{y}', tyi).replace('{x}', txi);
+      const dx = (txi * ts - origin.x) * scale, dy = (tyi * ts - origin.y) * scale;
+      jobs.push(loadTile(url)
+        .then(img => ctx.drawImage(img, dx, dy, ts * scale, ts * scale))
+        .catch(() => { failures++; }));
+    }
+  }
+  await Promise.all(jobs);
+  return { canvas: c, failures, total };
+}
+
+function drawBannerCard(ctx, s, x, y, opts) {
+  // opts: {title, count, area}  — canonical light style, like the repo's exports
+  const lines = [];
+  const count = opts.count;
+  const a = opts.area;
+  const sqftPP = count > 0 ? a / count : 0;
+  const r = count > 0 ? ratingFor(sqftPP) : null;
+
+  ctx.textBaseline = 'alphabetic';
+  ctx.textAlign = 'left';
+  const PAD = 18 * s, GAP = 7 * s;
+  const titleFont = '600 ' + 15 * s + 'px -apple-system, "SF Pro Text", "Helvetica Neue", Helvetica, Arial, sans-serif';
+  const bigFont = '700 ' + 27 * s + 'px -apple-system, "SF Pro Display", "Helvetica Neue", Helvetica, Arial, sans-serif';
+  const smallFont = '500 ' + 12 * s + 'px -apple-system, "SF Pro Text", "Helvetica Neue", Helvetica, Arial, sans-serif';
+  const chipFont = '600 ' + 12 * s + 'px -apple-system, "SF Pro Text", "Helvetica Neue", Helvetica, Arial, sans-serif';
+
+  const bigText = fmtInt(count) + ' people';
+  let areaText = fmtInt(a) + ' sq ft';
+  if (a >= ACRE_SQFT / 2) areaText += ' (' + fmt1(a / ACRE_SQFT) + ' acres)';
+  const densText = count > 0
+    ? fmt1(sqftPP) + ' sq ft / person · ' + fmt1(SQFT_PER_SQM / sqftPP) + ' people / m²'
+    : 'empty venue';
+  const dateText = todayISO();
+
+  ctx.font = bigFont;
+  let wNeed = ctx.measureText(bigText).width;
+  ctx.font = smallFont;
+  wNeed = Math.max(wNeed, ctx.measureText(areaText).width, ctx.measureText(densText).width);
+  if (opts.title) { ctx.font = titleFont; wNeed = Math.max(wNeed, ctx.measureText(opts.title).width); }
+  let chipW = 0;
+  if (r) { ctx.font = chipFont; chipW = ctx.measureText(r.label).width + 34 * s; wNeed = Math.max(wNeed, chipW); }
+
+  const W = wNeed + PAD * 2;
+  const H = PAD * 2 + (opts.title ? 15 * s + GAP : 0) + 27 * s + GAP + (12 * s + GAP * 0.7) * 2 + (r ? 24 * s + GAP : 0) + 12 * s;
+
+  function rr(rx, ry, rw, rh, rad) {
+    ctx.beginPath();
+    ctx.moveTo(rx + rad, ry);
+    ctx.arcTo(rx + rw, ry, rx + rw, ry + rh, rad);
+    ctx.arcTo(rx + rw, ry + rh, rx, ry + rh, rad);
+    ctx.arcTo(rx, ry + rh, rx, ry, rad);
+    ctx.arcTo(rx, ry, rx + rw, ry, rad);
+    ctx.closePath();
+  }
+
+  ctx.save();
+  ctx.shadowColor = 'rgba(0,0,0,0.25)';
+  ctx.shadowBlur = 14 * s;
+  ctx.shadowOffsetY = 3 * s;
+  ctx.fillStyle = 'rgba(255,255,255,0.96)';
+  rr(x, y, W, H, 14 * s);
+  ctx.fill();
+  ctx.restore();
+
+  let cy = y + PAD;
+  if (opts.title) {
+    ctx.fillStyle = '#6E6E73';
+    ctx.font = titleFont;
+    cy += 15 * s;
+    ctx.fillText(opts.title, x + PAD, cy);
+    cy += GAP;
+  }
+  ctx.fillStyle = '#1D1D1F';
+  ctx.font = bigFont;
+  cy += 27 * s;
+  ctx.fillText(bigText, x + PAD, cy);
+  cy += GAP + 12 * s;
+  ctx.fillStyle = '#6E6E73';
+  ctx.font = smallFont;
+  ctx.fillText(areaText, x + PAD, cy);
+  cy += GAP * 0.7 + 12 * s;
+  ctx.fillText(densText, x + PAD, cy);
+  if (r) {
+    cy += GAP + 4 * s;
+    const chipH = 24 * s;
+    ctx.fillStyle = r.hex;
+    rr(x + PAD, cy, chipW, chipH, chipH / 2);
+    ctx.fill();
+    ctx.fillStyle = '#FFFFFF';
+    ctx.beginPath();
+    ctx.arc(x + PAD + 12 * s, cy + chipH / 2, 3 * s, 0, 6.2832);
+    ctx.fill();
+    ctx.font = chipFont;
+    ctx.textBaseline = 'middle';
+    ctx.fillText(r.label, x + PAD + 20 * s, cy + chipH / 2 + s);
+    ctx.textBaseline = 'alphabetic';
+    cy += chipH;
+  }
+  // date, bottom-right inside the card
+  ctx.fillStyle = '#AEAEB2';
+  ctx.font = '500 ' + 10.5 * s + 'px -apple-system, "SF Pro Text", Helvetica, Arial, sans-serif';
+  ctx.textAlign = 'right';
+  ctx.fillText(dateText, x + W - PAD, y + H - 10 * s);
+  ctx.textAlign = 'left';
+  return { w: W, h: H };
+}
+
+function drawAttribution(ctx, s, w, h) {
+  if (state.mode !== 'geo') return;
+  ctx.font = '400 ' + 10 * s + 'px -apple-system, Helvetica, Arial, sans-serif';
+  const t = ESRI_ATTRIB;
+  const tw = ctx.measureText(t).width;
+  ctx.fillStyle = 'rgba(0,0,0,0.55)';
+  ctx.fillRect(w - tw - 16 * s, h - 20 * s, tw + 16 * s, 20 * s);
+  ctx.fillStyle = 'rgba(255,255,255,0.9)';
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(t, w - 8 * s, h - 10 * s);
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'alphabetic';
+}
+
+function scaledTransform(s) {
+  const T = currentTransform();
+  if (!T) return null;
+  return { k: T.k * s, tx: T.tx * s, ty: T.ty * s, ys: T.ys * s };
+}
+
+async function composeSingle(scale, useTiles) {
+  const { w, h } = stageSize();
+  const { canvas, failures, total } = await renderBase(scale, useTiles);
+  const ctx = canvas.getContext('2d');
+  const T = scaledTransform(scale);
+  if (T && world.polyFt) {
+    drawPolygonOn(ctx, T, { handles: false });
+    drawDotsOn(ctx, T, state.count, w * scale, h * scale, scale);
+  }
+  drawBannerCard(ctx, scale, 20 * scale, 20 * scale, {
+    title: state.title.trim(),
+    count: Math.min(state.count, world.generated || state.count),
+    area: world.area,
+  });
+  if (useTiles) drawAttribution(ctx, scale, canvas.width, canvas.height);
+  return { canvas, failures, total };
+}
+
+$('export-png').addEventListener('click', async () => {
+  if (!world.polyFt) { toast('Draw the venue area first.'); return; }
+  toast('Rendering export…');
+  const scale = state.exportScale;
+  let result, url;
+  try {
+    result = await composeSingle(scale, true);
+    url = result.canvas.toDataURL('image/png');
+  } catch (e) {   // canvas tainted or compose failure — schematic fallback
+    result = await composeSingle(scale, false);
+    url = result.canvas.toDataURL('image/png');
+    toast('Aerial imagery could not be embedded — exported a schematic view instead.');
+  }
+  const name = ['crowd', slug(state.title) || 'scenario', fmtInt(state.count).replace(/,/g, ''), todayISO()].filter(Boolean).join('-') + '.png';
+  download(url, name);
+  if (result.total && result.failures) {
+    toast('Exported — note: ' + result.failures + ' of ' + result.total + ' imagery tiles failed to load.');
+  } else {
+    toast('PNG exported at ' + scale + '× resolution.');
+  }
+});
+
+$('export-board').addEventListener('click', async () => {
+  if (!world.polyFt || state.scenarios.length < 2) return;
+  toast('Rendering comparison board…');
+  let url;
+  try {
+    url = (await composeBoard(true)).toDataURL('image/png');
+  } catch (e) {
+    try {
+      url = (await composeBoard(false)).toDataURL('image/png');
+      toast('Aerial imagery could not be embedded — exported a schematic board instead.');
+    } catch (e2) { toast('Export failed: ' + e2.message); return; }
+  }
+  download(url, 'crowd-comparison-' + (slug(state.title) || todayISO()) + '.png');
+  toast('Comparison board exported.');
+});
+
+async function composeBoard(useTiles) {
+  const S = 2;
+  const { w, h } = stageSize();
+  const scen = state.scenarios.map(sc => ({ ...sc, count: Math.min(sc.count, world.cap) }));
+  const K = scen.length;
+  const cols = K <= 3 ? K : (K === 4 ? 2 : 3);
+  const rows = Math.ceil(K / cols);
+
+  const MARGIN = 30, GAP = 18, HEADER = 92, CAPTION = 46;
+  const panelW = Math.min(600, Math.max(380, Math.round(1400 / cols)));
+  const ratio = panelW / w;
+  const imgH = Math.round(h * ratio);
+  const panelH = imgH + CAPTION;
+  const W = MARGIN * 2 + cols * panelW + (cols - 1) * GAP;
+  const H = MARGIN * 2 + HEADER + rows * panelH + (rows - 1) * GAP;
+
+  const c = document.createElement('canvas');
+  c.width = W * S; c.height = H * S;
+  const ctx = c.getContext('2d');
+  ctx.scale(S, S);
+  ctx.fillStyle = '#F5F5F7';
+  ctx.fillRect(0, 0, W, H);
+
+  function rr(rx, ry, rw, rh, rad) {
+    ctx.beginPath();
+    ctx.moveTo(rx + rad, ry);
+    ctx.arcTo(rx + rw, ry, rx + rw, ry + rh, rad);
+    ctx.arcTo(rx + rw, ry + rh, rx, ry + rh, rad);
+    ctx.arcTo(rx, ry + rh, rx, ry, rad);
+    ctx.arcTo(rx, ry, rx + rw, ry, rad);
+    ctx.closePath();
+  }
+
+  // header
+  ctx.fillStyle = '#1D1D1F';
+  ctx.font = '700 26px -apple-system, "SF Pro Display", "Helvetica Neue", Helvetica, Arial, sans-serif';
+  ctx.textBaseline = 'alphabetic';
+  ctx.fillText(state.title.trim() || 'Crowd density comparison', MARGIN, MARGIN + 30);
+  ctx.fillStyle = '#6E6E73';
+  ctx.font = '500 13.5px -apple-system, "SF Pro Text", Helvetica, Arial, sans-serif';
+  let areaText = fmtInt(world.area) + ' sq ft';
+  if (world.area >= ACRE_SQFT / 2) areaText += ' (' + fmt1(world.area / ACRE_SQFT) + ' acres)';
+  ctx.fillText('Same venue view · ' + areaText + ' · ' + K + ' scenarios', MARGIN, MARGIN + 54);
+  ctx.textAlign = 'right';
+  ctx.fillText(todayISO(), W - MARGIN, MARGIN + 30);
+  ctx.textAlign = 'left';
+
+  // shared base — rendered once at 2× stage resolution, reused by every panel
+  const base = (await renderBase(2, useTiles)).canvas;
+  const T0 = currentTransform();
+
+  for (let i = 0; i < K; i++) {
+    const col = i % cols, row = Math.floor(i / cols);
+    const px = MARGIN + col * (panelW + GAP);
+    const py = MARGIN + HEADER + row * (panelH + GAP);
+
+    ctx.save();
+    rr(px, py, panelW, panelH, 12);
+    ctx.clip();
+    ctx.drawImage(base, px, py, panelW, imgH);
+    const T = { k: T0.k * ratio, tx: px + T0.tx * ratio, ty: py + T0.ty * ratio, ys: T0.ys * ratio };
+    drawPolygonOn(ctx, T, { handles: false });
+    // caption strip is painted after the dots, so it stays clean
+    drawDotsOn(ctx, T, scen[i].count, W, py + imgH, ratio);
+    // caption strip
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fillRect(px, py + imgH, panelW, CAPTION);
+    const sqftPP = scen[i].count > 0 ? world.area / scen[i].count : 0;
+    const r = scen[i].count > 0 ? ratingFor(sqftPP) : null;
+    ctx.fillStyle = '#1D1D1F';
+    ctx.font = '700 17px -apple-system, "SF Pro Display", Helvetica, Arial, sans-serif';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(fmtInt(scen[i].count) + ' people', px + 14, py + imgH + CAPTION / 2);
+    if (r) {
+      const cw = ctx.measureText(fmtInt(scen[i].count) + ' people').width;
+      ctx.font = '500 12.5px -apple-system, "SF Pro Text", Helvetica, Arial, sans-serif';
+      ctx.fillStyle = '#6E6E73';
+      ctx.fillText(fmt1(sqftPP) + ' sq ft/pp', px + 14 + cw + 12, py + imgH + CAPTION / 2);
+      ctx.fillStyle = r.hex;
+      ctx.beginPath();
+      ctx.arc(px + panelW - 14 - 4, py + imgH + CAPTION / 2, 4.5, 0, 6.2832);
+      ctx.fill();
+      ctx.textAlign = 'right';
+      ctx.fillText(r.label.split(' — ')[0], px + panelW - 14 - 14, py + imgH + CAPTION / 2);
+      ctx.textAlign = 'left';
+    }
+    ctx.textBaseline = 'alphabetic';
+    ctx.restore();
+    // panel border
+    ctx.strokeStyle = 'rgba(0,0,0,0.10)';
+    ctx.lineWidth = 1;
+    rr(px + 0.5, py + 0.5, panelW - 1, panelH - 1, 11.5);
+    ctx.stroke();
+  }
+
+  if (useTiles && state.mode === 'geo') {
+    ctx.fillStyle = '#AEAEB2';
+    ctx.font = '400 10px -apple-system, Helvetica, Arial, sans-serif';
+    ctx.textAlign = 'right';
+    ctx.fillText(ESRI_ATTRIB, W - MARGIN, H - 10);
+    ctx.textAlign = 'left';
+  }
+  return c;
+}
+
+/* ============================== Init ============================== */
+
+load();
+renderScenarios();
+$('title-input').value = state.title;
+document.querySelectorAll('[data-res]').forEach(b =>
+  b.classList.toggle('is-active', Number(b.dataset.res) === state.exportScale));
+document.querySelectorAll('.swatch').forEach(b =>
+  b.classList.toggle('is-active', b.dataset.color === state.dotColor));
+
+new ResizeObserver(resizeCanvases).observe(stage);
+resizeCanvases();
+applyTheme();
+
+if (state.image.dataUrl) {
+  setPlanImage(state.image.dataUrl, { keepSetup: true });
+} else if (state.mode === 'image' && state.image.polygon.length) {
+  toast('Re-upload your site plan to restore the saved venue outline.');
+}
+applyMode();
+refreshCalibStatus();
+</script>
+</body>
+</html>
